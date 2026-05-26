@@ -19,17 +19,18 @@ func TestSanitize_EmptyWebroot(t *testing.T) {
 
 func TestCheck_InvisibleDisablesFeatures(t *testing.T) {
 	opts := &options.Options{
-		Invisible: true,
-		SFTP:     true,
-		WebDav:   true,
-		MDNS:     true,
-		Silent:   true,
-		DNS:      true,
-		SMTP:     true,
+		Invisible:   true,
+		FTP:         true,
+		FTPSFTPMode: true,
+		WebDav:      true,
+		MDNS:        true,
+		Silent:      true,
+		DNS:         true,
+		SMTP:        true,
 	}
 	result, err := Check(opts)
 	require.NoError(t, err)
-	require.False(t, result.SFTP)
+	require.False(t, result.FTP)
 	require.False(t, result.WebDav)
 	require.False(t, result.MDNS)
 	require.False(t, result.Silent)
@@ -206,7 +207,7 @@ func TestFurtherProcessing_OutputRelativeBecomesAbsolute(t *testing.T) {
 func TestCheck_InvisibleWithSMBOnly(t *testing.T) {
 	opts := &options.Options{
 		Invisible: true,
-		SFTP:      false,
+		FTP:       false,
 		WebDav:    false,
 	}
 	result, err := Check(opts)

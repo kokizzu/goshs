@@ -98,7 +98,7 @@ func GenerateHashedPassword(password []byte) string {
 	return string(bytes)
 }
 
-func RegisterZeroconfMDNS(ssl bool, webPort int, webdav bool, webdavPort int, sftp bool, sftpPort int, smtp bool, smtpPort int, dns bool, dnsPort int, smb bool, smbPort int, ldap bool, ldapPort int) error {
+func RegisterZeroconfMDNS(ssl bool, webPort int, webdav bool, webdavPort int, smtp bool, smtpPort int, dns bool, dnsPort int, smb bool, smbPort int, ldap bool, ldapPort int, ftp bool, ftpSFTPMode bool, ftpPort int) error {
 	// Register zeroconf mDNS
 	hostname, err := os.Hostname()
 	if err != nil {
@@ -157,24 +157,6 @@ func RegisterZeroconfMDNS(ssl bool, webPort int, webdav bool, webdavPort int, sf
 		defer zeroDav.Shutdown()
 
 		logger.Infof("mDNS service registered as %s://%s.local:%d", out, hostname, webdavPort)
-	}
-
-	// Register sftp if enabled
-	if sftp {
-		zeroSFTP, err := zeroconf.Register(
-			"goshs SFTP",
-			"_ssh._tcp",
-			"local.",
-			sftpPort,
-			[]string{fmt.Sprintf("host=%s.local", hostname), "subsystem=sftp", "path=/", fmt.Sprintf("version=%s", goshsversion.GoshsVersion)},
-			nil,
-		)
-		if err != nil {
-			return fmt.Errorf("zeroconf mDNS did not register successfully: %+v", err)
-		}
-		defer zeroSFTP.Shutdown()
-
-		logger.Infof("mDNS service registered as ssh://%s.local:%d", hostname, sftpPort)
 	}
 
 	// Register smtp if enabled
@@ -247,6 +229,37 @@ func RegisterZeroconfMDNS(ssl bool, webPort int, webdav bool, webdavPort int, sf
 		defer zeroDav.Shutdown()
 
 		logger.Infof("mDNS service registered as ldap://%s.local:%d", hostname, ldapPort)
+	}
+
+	// Register ftp/sftp if enabled
+	if ftp {
+		var ftpServiceType, ftpProto, ftpName string
+		var ftpTxtRecords []string
+		if ftpSFTPMode {
+			ftpServiceType = "_ssh._tcp"
+			ftpProto = "ssh"
+			ftpName = "goshs SFTP"
+			ftpTxtRecords = []string{fmt.Sprintf("host=%s.local", hostname), "subsystem=sftp", "path=/", fmt.Sprintf("version=%s", goshsversion.GoshsVersion)}
+		} else {
+			ftpServiceType = "_ftp._tcp"
+			ftpProto = "ftp"
+			ftpName = "goshs FTP"
+			ftpTxtRecords = []string{fmt.Sprintf("host=%s.local", hostname), fmt.Sprintf("version=%s", goshsversion.GoshsVersion)}
+		}
+		zeroFTP, err := zeroconf.Register(
+			ftpName,
+			ftpServiceType,
+			"local.",
+			ftpPort,
+			ftpTxtRecords,
+			nil,
+		)
+		if err != nil {
+			return fmt.Errorf("zeroconf mDNS did not register successfully: %+v", err)
+		}
+		defer zeroFTP.Shutdown()
+
+		logger.Infof("mDNS service registered as %s://%s.local:%d", ftpProto, hostname, ftpPort)
 	}
 
 	return nil

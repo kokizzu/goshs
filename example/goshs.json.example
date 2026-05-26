@@ -36,15 +36,16 @@
   "webhook_events": [
     "all"
   ],
-  "sftp": false,
-  "sftp_port": 2022,
-  "sftp_keyfile": "",
-  "sftp_host_keyfile": "",
+  "ftp": false,
+  "ftp_port": 2121,
+  "ftp_sftp_mode": false,
+  "ftp_keyfile": "",
+  "ftp_host_keyfile": "",
   "whitelist": "",
   "trusted_proxies": "",
   "tunnel": false,
   "dns_server": false,
-  "dns_port": 8053
+  "dns_port": 8053,
   "dns_ip": "127.0.0.1",
   "smtp_server": false,
   "smtp_port": 2525,

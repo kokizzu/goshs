@@ -5,6 +5,7 @@ import (
 
 	"goshs.de/goshs/v2/clipboard"
 	"goshs.de/goshs/v2/dnsserver"
+	"goshs.de/goshs/v2/ftpserver"
 	"goshs.de/goshs/v2/httpserver"
 	"goshs.de/goshs/v2/ldapserver"
 	"goshs.de/goshs/v2/logger"
@@ -38,11 +39,6 @@ func StartAll(opts *options.Options) func(context.Context) {
 		go webdavSrv.Start("webdav")
 	}
 
-	if opts.SFTP {
-		sftpSrv := sftpserver.NewSFTPServer(opts, wl, *wh)
-		go sftpSrv.Start()
-	}
-
 	if opts.DNS {
 		dnsSrv := dnsserver.NewDNSServer(opts, hub, wh)
 		go dnsSrv.Start()
@@ -63,9 +59,19 @@ func StartAll(opts *options.Options) func(context.Context) {
 		go ldapSrv.Start()
 	}
 
+	if opts.FTP {
+		if opts.FTPSFTPMode {
+			sftpSrv := sftpserver.NewSFTPServer(opts, wl, *wh)
+			go sftpSrv.Start()
+		} else {
+			ftpSrv := ftpserver.NewFTPServer(opts, wl, *wh)
+			go ftpSrv.Start()
+		}
+	}
+
 	// Zeroconf mDNS
 	if opts.MDNS {
-		err := utils.RegisterZeroconfMDNS(opts.SSL, opts.Port, opts.WebDav, opts.WebDavPort, opts.SFTP, opts.SFTPPort, opts.SMTP, opts.SMTPPort, opts.DNS, opts.DNSPort, opts.SMB, opts.SMBPort, opts.LDAP, opts.LDAPPort)
+		err := utils.RegisterZeroconfMDNS(opts.SSL, opts.Port, opts.WebDav, opts.WebDavPort, opts.SMTP, opts.SMTPPort, opts.DNS, opts.DNSPort, opts.SMB, opts.SMBPort, opts.LDAP, opts.LDAPPort, opts.FTP, opts.FTPSFTPMode, opts.FTPPort)
 		if err != nil {
 			logger.Warnf("error registering zeroconf mDNS: %+v", err)
 		}

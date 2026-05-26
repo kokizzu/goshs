@@ -35,14 +35,14 @@ type SFTPServer struct {
 func NewSFTPServer(opts *options.Options, wl *httpserver.Whitelist, webhook webhook.Webhook) *SFTPServer {
 	return &SFTPServer{
 		IP:          opts.IP,
-		Port:        opts.SFTPPort,
-		KeyFile:     opts.SFTPKeyFile,
+		Port:        opts.FTPPort,
+		KeyFile:     opts.FTPKeyFile,
 		Username:    opts.Username,
 		Password:    opts.Password,
 		Root:        opts.Webroot,
 		ReadOnly:    opts.ReadOnly,
 		UploadOnly:  opts.UploadOnly,
-		HostKeyFile: opts.SFTPHostKeyFile,
+		HostKeyFile: opts.FTPHostKeyFile,
 		Webhook:     webhook,
 		Whitelist:   wl,
 	}
@@ -164,5 +164,5 @@ func (s *SFTPServer) HandleWebhookSend(event string, r *sftp.Request, ip string,
 		}
 	}
 
-	logger.HandleWebhookSend(message, "sftp", s.Webhook)
+	logger.HandleWebhookSend(message, "ftp", s.Webhook)
 }

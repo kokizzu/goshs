@@ -34,10 +34,6 @@ type Options struct {
 	CertAuth            string   // ""
 	WebDav              bool     // false
 	WebDavPort          int      // 8001
-	SFTP                bool     // false
-	SFTPPort            int      // 2022
-	SFTPKeyFile         string   // ""
-	SFTPHostKeyFile     string   // ""
 	UploadOnly          bool     // false
 	ReadOnly            bool     // false
 	NoClipboard         bool     // false
@@ -81,6 +77,11 @@ type Options struct {
 	LDAPJNDIEnabled     bool     // false — when true, use search baseDN as class name
 	LDAPJNDIBase        string   // "" auto-constructs from IP/port
 	LDAPWordlist        string   // "" optional wordlist path for NTLM hash cracking
+	FTP                 bool     // false
+	FTPPort             int      // 2121
+	FTPSFTPMode         bool     // false
+	FTPKeyFile          string   // ""
+	FTPHostKeyFile      string   // ""
 }
 
 func Parse() (*Options, bool) {
@@ -152,13 +153,6 @@ func Parse() (*Options, bool) {
 	flag.StringVar(&opts.WebhookEvents, "webhook-events", "all", "")
 	flag.StringVar(&opts.WebhookProvider, "Wp", "Discord", "")
 	flag.StringVar(&opts.WebhookProvider, "webhook-provider", "Discord", "")
-	flag.BoolVar(&opts.SFTP, "sftp", false, "sftp")
-	flag.IntVar(&opts.SFTPPort, "sp", 2022, "sftp port")
-	flag.IntVar(&opts.SFTPPort, "sftp-port", 2022, "sftp port")
-	flag.StringVar(&opts.SFTPKeyFile, "skf", "", "")
-	flag.StringVar(&opts.SFTPKeyFile, "sftp-keyfile", "", "")
-	flag.StringVar(&opts.SFTPHostKeyFile, "shk", "", "")
-	flag.StringVar(&opts.SFTPHostKeyFile, "sftp-host-keyfile", "", "")
 	flag.StringVar(&opts.Whitelist, "ipw", "", "")
 	flag.StringVar(&opts.Whitelist, "ip-whitelist", "", "")
 	flag.StringVar(&opts.TrustedProxies, "tpw", "", "")
@@ -195,6 +189,13 @@ func Parse() (*Options, bool) {
 	flag.BoolVar(&opts.LDAPJNDIEnabled, "ldap-jndi", false, "Enable dynamic JNDI mode (baseDN becomes the class name)")
 	flag.StringVar(&opts.LDAPJNDIBase, "ldap-jndi-base", "", "JNDI codeBase URL override (default: auto from HTTP server)")
 	flag.StringVar(&opts.LDAPWordlist, "ldap-wordlist", "", "Wordlist file for LDAP NTLM hash cracking")
+	flag.BoolVar(&opts.FTP, "ftp", false, "Enable FTP server")
+	flag.IntVar(&opts.FTPPort, "ftp-port", 2121, "FTP server port")
+	flag.BoolVar(&opts.FTPSFTPMode, "ftp-sftp", false, "Use SFTP instead of plain FTP")
+	flag.StringVar(&opts.FTPKeyFile, "fkf", "", "")
+	flag.StringVar(&opts.FTPKeyFile, "ftp-keyfile", "", "")
+	flag.StringVar(&opts.FTPHostKeyFile, "fhk", "", "")
+	flag.StringVar(&opts.FTPHostKeyFile, "ftp-host-keyfile", "", "")
 
 	// One-shot flags
 	upd := flag.Bool("update", false, "update")
@@ -270,11 +271,12 @@ TLS options:
   -slh,   --le-http       Port to use for Let's Encrypt HTTP Challenge	   (default: 80)
   -slt,   --le-tls        Port to use for Let's Encrypt TLS ALPN Challenge (default: 443)
 
-SFTP server options:
-  -sftp                        Activate SFTP server capabilities (default: false)
-  -sp,    --sftp-port          The port SFTP listens on          (default: 2022)
-  -skf,   --sftp-keyfile       Authorized_keys file for pubkey auth
-  -shk,   --sftp-host-keyfile  SSH Host key file for identification
+FTP/SFTP server options:
+  -ftp                          Activate FTP server capabilities          (default: false)
+  -ftp-port                     The port FTP/SFTP listens on              (default: 2121)
+  -ftp-sftp                     Switch to SFTP instead of plain FTP       (default: false)
+  -fkf, --ftp-keyfile           Authorized_keys file for SFTP pubkey auth
+  -fhk, --ftp-host-keyfile      SSH host key file for SFTP identification
 
 SMB server options:
   -smb                        Activate SMB server capabilities         (default: false)
@@ -314,7 +316,7 @@ Webhook options:
   -Wu, --webhook-url        URL to send webhook requests to
   -We, --webhook-events     Comma separated list of events to notify
                             [all, upload, delete, download, view, webdav,
-                            sftp, smb, dns, smtp, redirect, verbose]	(default: all)
+                            ftp, smb, dns, smtp, redirect, verbose]	    (default: all)
   -Wp, --webhook-provider   Webhook provider
                             [Discord, Mattermost, Slack]                (default: Discord)
 

@@ -194,21 +194,23 @@ func TestLoadConfig_DNSFields(t *testing.T) {
 	require.Equal(t, "10.0.0.1", result.DNSIP)
 }
 
-func TestLoadConfig_SFTPFields(t *testing.T) {
+func TestLoadConfig_FTPSFTPFields(t *testing.T) {
 	cfg := Config{
-		SFTP:            true,
-		SFTPPort:        2022,
-		SFTPKeyFile:     "/etc/goshs/authorized_keys",
-		SFTPHostKeyFile: "/etc/goshs/host_key",
+		FTP:            true,
+		FTPPort:        2022,
+		FTPSFTPMode:    true,
+		FTPKeyFile:     "/etc/goshs/authorized_keys",
+		FTPHostKeyFile: "/etc/goshs/host_key",
 	}
 	path := writeTempConfig(t, cfg)
 	opts := &options.Options{ConfigFile: path}
 	result, err := LoadConfig(opts)
 	require.NoError(t, err)
-	require.True(t, result.SFTP)
-	require.Equal(t, 2022, result.SFTPPort)
-	require.Equal(t, "/etc/goshs/authorized_keys", result.SFTPKeyFile)
-	require.Equal(t, "/etc/goshs/host_key", result.SFTPHostKeyFile)
+	require.True(t, result.FTP)
+	require.Equal(t, 2022, result.FTPPort)
+	require.True(t, result.FTPSFTPMode)
+	require.Equal(t, "/etc/goshs/authorized_keys", result.FTPKeyFile)
+	require.Equal(t, "/etc/goshs/host_key", result.FTPHostKeyFile)
 }
 
 func TestLoadConfig_TLSFields(t *testing.T) {

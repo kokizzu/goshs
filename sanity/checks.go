@@ -51,14 +51,14 @@ func Check(opts *options.Options) (*options.Options, error) {
 	}
 	// Sanity check for invisible mode
 	if opts.Invisible {
-		opts.SFTP = false
 		opts.WebDav = false
 		opts.MDNS = false
 		opts.Silent = false
 		opts.DNS = false
 		opts.SMTP = false
 		opts.LDAP = false
-		logger.Warn("Invisible mode activated, disabling SFTP, WebDAV, silent mode, DNS, SMTP, LDAP and mDNS support")
+		opts.FTP = false
+		logger.Warn("Invisible mode activated, disabling FTP/SFTP, WebDAV, silent mode, DNS, SMTP, LDAP and mDNS support")
 	}
 
 	// Sanity check for upload only vs read only
@@ -85,13 +85,13 @@ func Check(opts *options.Options) (*options.Options, error) {
 		logger.Fatal("To use certificate based authentication with a CA cert you will need tls in any mode (-ss, -sk/-sc, -p12, -sl)")
 	}
 
-	// Sanity check either user:pass or keyfile when using sftp
-	if opts.SFTP && (opts.BasicAuth == "" && opts.SFTPKeyFile == "") {
-		logger.Fatal("When using SFTP you need to either specify an authorized keyfile using -sfk or username and password using -b")
+	// Sanity check either user:pass or keyfile when using sftp mode
+	if opts.FTP && opts.FTPSFTPMode && (opts.BasicAuth == "" && opts.FTPKeyFile == "") {
+		logger.Fatal("When using SFTP you need to either specify an authorized keyfile using -fkf or username and password using -b")
 	}
 
 	// Sanity check: empty username is not valid for SFTP password auth
-	if opts.SFTP && strings.HasPrefix(opts.BasicAuth, ":") {
+	if opts.FTP && opts.FTPSFTPMode && strings.HasPrefix(opts.BasicAuth, ":") {
 		logger.Fatal("When using SFTP with password authentication, the username cannot be empty. Please provide a non-empty username with -b 'user:pass'.")
 	}
 

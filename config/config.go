@@ -59,10 +59,6 @@ type Config struct {
 	WebhookURL          string   `json:"webhook_url"`
 	WebhookProvider     string   `json:"webhook_provider"`
 	WebhookEvents       []string `json:"webhook_events"`
-	SFTP                bool     `json:"sftp"`
-	SFTPPort            int      `json:"sftp_port"`
-	SFTPKeyFile         string   `json:"sftp_keyfile"`
-	SFTPHostKeyFile     string   `json:"sftp_host_keyfile"`
 	Whitelist           string   `json:"whitelist"`
 	TrustedProxies      string   `json:"trusted_proxies"`
 	Tunnel              bool     `json:"tunnel"`
@@ -84,6 +80,11 @@ type Config struct {
 	LDAPJNDIEnabled     bool     `json:"ldap_jndi"`
 	LDAPJNDIBase        string   `json:"ldap_jndi_base"`
 	LDAPWordlist        string   `json:"ldap_wordlist"`
+	FTP                 bool     `json:"ftp"`
+	FTPPort             int      `json:"ftp_port"`
+	FTPSFTPMode         bool     `json:"ftp_sftp_mode"`
+	FTPKeyFile          string   `json:"ftp_keyfile"`
+	FTPHostKeyFile      string   `json:"ftp_host_keyfile"`
 }
 
 func LoadConfig(opts *options.Options) (*options.Options, error) {
@@ -140,10 +141,6 @@ func LoadConfig(opts *options.Options) (*options.Options, error) {
 	opts.WebhookURL = cfg.WebhookURL
 	opts.WebhookProvider = cfg.WebhookProvider
 	opts.WebhookEventsParsed = cfg.WebhookEvents
-	opts.SFTP = cfg.SFTP
-	opts.SFTPPort = cfg.SFTPPort
-	opts.SFTPKeyFile = cfg.SFTPKeyFile
-	opts.SFTPHostKeyFile = cfg.SFTPHostKeyFile
 	opts.Whitelist = cfg.Whitelist
 	opts.TrustedProxies = cfg.TrustedProxies
 	opts.Invisible = cfg.Invisible
@@ -165,6 +162,11 @@ func LoadConfig(opts *options.Options) (*options.Options, error) {
 	opts.LDAPPort = cfg.LDAPPort
 	opts.LDAPJNDIEnabled = cfg.LDAPJNDIEnabled
 	opts.LDAPJNDIBase = cfg.LDAPJNDIBase
+	opts.FTP = cfg.FTP
+	opts.FTPPort = cfg.FTPPort
+	opts.FTPSFTPMode = cfg.FTPSFTPMode
+	opts.FTPKeyFile = cfg.FTPKeyFile
+	opts.FTPHostKeyFile = cfg.FTPHostKeyFile
 
 	// Default upload folder to webroot if not set in config
 	if opts.UploadFolder == "" {
@@ -211,10 +213,6 @@ func PrintExample() (string, error) {
 		WebhookURL:          "",
 		WebhookProvider:     "discord",
 		WebhookEvents:       []string{"all"},
-		SFTP:                false,
-		SFTPPort:            2022,
-		SFTPKeyFile:         "",
-		SFTPHostKeyFile:     "",
 		Whitelist:           "",
 		TrustedProxies:      "",
 		Tunnel:              false,
@@ -235,6 +233,11 @@ func PrintExample() (string, error) {
 		LDAPPort:            389,
 		LDAPJNDIEnabled:     false,
 		LDAPJNDIBase:        "",
+		FTP:                 false,
+		FTPPort:             2121,
+		FTPSFTPMode:         false,
+		FTPKeyFile:          "",
+		FTPHostKeyFile:      "",
 	}
 
 	b, err := json.MarshalIndent(defaultConfig, "", "  ")

@@ -13,10 +13,10 @@ import (
 	"runtime"
 	"strings"
 
-	"goshs.de/goshs/v2/httpserver"
-	"goshs.de/goshs/v2/logger"
 	"github.com/pkg/sftp"
 	gossh "golang.org/x/crypto/ssh"
+	"goshs.de/goshs/v2/httpserver"
+	"goshs.de/goshs/v2/logger"
 )
 
 var authorizedKeysMap map[string]bool
@@ -50,6 +50,7 @@ func sanitizePath(clientPath string, sftpRoot string) (string, error) {
 		sftpRoot = rewritePathWindows(sftpRoot)
 	}
 	clean := filepath.Clean("/" + strings.TrimLeft(clientPath, "/"))
+	clean = strings.TrimPrefix(clean, sftpRoot)
 	abs := filepath.Join(sftpRoot, clean)
 	rootClean := filepath.Clean(sftpRoot)
 	if abs != rootClean && !strings.HasPrefix(abs, rootClean+string(filepath.Separator)) {

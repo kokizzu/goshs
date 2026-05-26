@@ -306,15 +306,15 @@ func TestIsAllowedIP_InvalidAddr(t *testing.T) {
 
 func TestNewSFTPServer(t *testing.T) {
 	opts := &options.Options{
-		IP:              "127.0.0.1",
-		SFTPPort:        2222,
-		SFTPKeyFile:     "keys",
-		Username:        "user",
-		Password:        "pass",
-		Webroot:         "/tmp",
-		ReadOnly:        true,
-		UploadOnly:      false,
-		SFTPHostKeyFile: "hostkey",
+		IP:             "127.0.0.1",
+		FTPPort:        2222,
+		FTPKeyFile:     "keys",
+		Username:       "user",
+		Password:       "pass",
+		Webroot:        "/tmp",
+		ReadOnly:       true,
+		UploadOnly:     false,
+		FTPHostKeyFile: "hostkey",
 	}
 	wh := webhook.Register(false, "", "discord", []string{})
 	wl := &httpserver.Whitelist{}
