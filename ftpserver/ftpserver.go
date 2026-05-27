@@ -1,6 +1,7 @@
 package ftpserver
 
 import (
+	"crypto/subtle"
 	"crypto/tls"
 	"fmt"
 	"net"
@@ -86,7 +87,9 @@ func (d *mainDriver) ClientDisconnected(cc ftplib.ClientContext) {
 
 func (d *mainDriver) AuthUser(cc ftplib.ClientContext, user, pass string) (ftplib.ClientDriver, error) {
 	if d.srv.Username != "" || d.srv.Password != "" {
-		if user != d.srv.Username || pass != d.srv.Password {
+		userOK := subtle.ConstantTimeCompare([]byte(user), []byte(d.srv.Username)) == 1
+		passOK := subtle.ConstantTimeCompare([]byte(pass), []byte(d.srv.Password)) == 1
+		if !userOK || !passOK {
 			logger.Warnf("[FTP] Auth failed for user '%s' from %s", user, cc.RemoteAddr())
 			d.srv.HandleWebhookSend("AUTH", user, cc.RemoteAddr().String(), true)
 			return nil, fmt.Errorf("invalid credentials")
