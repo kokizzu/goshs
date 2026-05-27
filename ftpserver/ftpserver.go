@@ -85,7 +85,7 @@ func (d *mainDriver) ClientDisconnected(cc ftplib.ClientContext) {
 }
 
 func (d *mainDriver) AuthUser(cc ftplib.ClientContext, user, pass string) (ftplib.ClientDriver, error) {
-	if d.srv.Username != "" && d.srv.Password != "" {
+	if d.srv.Username != "" || d.srv.Password != "" {
 		if user != d.srv.Username || pass != d.srv.Password {
 			logger.Warnf("[FTP] Auth failed for user '%s' from %s", user, cc.RemoteAddr())
 			d.srv.HandleWebhookSend("AUTH", user, cc.RemoteAddr().String(), true)
