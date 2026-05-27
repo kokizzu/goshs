@@ -27,7 +27,7 @@ import (
 )
 
 func randomSerial() (big.Int, error) {
-	n, err := rand.Int(rand.Reader, big.NewInt(1000))
+	n, err := rand.Int(rand.Reader, big.NewInt(1).Lsh(big.NewInt(1), 128))
 	if err != nil {
 		return *big.NewInt(0), err
 	}
