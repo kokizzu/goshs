@@ -244,7 +244,7 @@ func fetchChecksum(release *github.RepositoryRelease, assetName string) ([]byte,
 		return nil, err
 	}
 
-	for _, line := range strings.Split(string(data), "\n") {
+	for line := range strings.SplitSeq(string(data), "\n") {
 		fields := strings.Fields(line)
 		if len(fields) == 2 && fields[1] == assetName {
 			return hex.DecodeString(fields[0])
