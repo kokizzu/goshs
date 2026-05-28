@@ -42,8 +42,8 @@ type smbHandle struct {
 	DeleteOnClose        bool
 	AccessMask           uint32
 	SyntheticEntriesSent bool
-	Modified   bool // true if file was created/overwritten/written — triggers CHANGE_NOTIFY on close
-	IsNullSink bool // true for Alternate Data Stream handles (e.g. Zone.Identifier); writes are silently discarded
+	Modified             bool // true if file was created/overwritten/written — triggers CHANGE_NOTIFY on close
+	IsNullSink           bool // true for Alternate Data Stream handles (e.g. Zone.Identifier); writes are silently discarded
 }
 
 // pendingNotify tracks a held SMB2 CHANGE_NOTIFY request.

@@ -12,9 +12,9 @@ import (
 	"os"
 	"strings"
 
-	"goshs.de/goshs/v2/webhook"
 	"github.com/pkg/sftp"
 	"github.com/sirupsen/logrus"
+	"goshs.de/goshs/v2/webhook"
 )
 
 func isBase64(s string) bool {

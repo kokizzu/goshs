@@ -159,8 +159,8 @@ func (s *SMBServer) buildBindAck(callID uint32, req []byte, pipePath string) []b
 
 	// p_result_list: MS-RPCE 2.2.2.4 — n_results(uint8) + reserved(uint8) + reserved2(uint16)
 	body = append(body, byte(nCtx)) // n_results (uint8)
-	body = append(body, 0x00)        // reserved
-	body = append(body, 0x00, 0x00)  // reserved2
+	body = append(body, 0x00)       // reserved
+	body = append(body, 0x00, 0x00) // reserved2
 
 	// Build result entries: accept the matching context, reject the rest
 	for i := uint16(0); i < nCtx; i++ {
@@ -180,10 +180,10 @@ func (s *SMBServer) buildBindAck(callID uint32, req []byte, pipePath string) []b
 }
 
 const (
-	srvsvcOpNetShareGetInfo      = 16
-	srvsvcOpNetServerGetInfo     = 13
+	srvsvcOpNetShareGetInfo        = 16
+	srvsvcOpNetServerGetInfo       = 13
 	srvsvcOpNetServerTransportEnum = 21
-	wkssvcOpNetWkstaGetInfo      = 0
+	wkssvcOpNetWkstaGetInfo        = 0
 )
 
 // handleRPCRequest dispatches an RPC request by opnum.

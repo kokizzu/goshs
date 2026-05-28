@@ -317,7 +317,6 @@ func (s *SMBServer) handleConn(conn net.Conn) {
 
 // ── Dispatcher ─────────────────────────────────────────────────────────────
 
-
 func (s *SMBServer) dispatch(cs *connState, remoteAddr string, buf []byte) []byte {
 	if len(buf) < 4 {
 		return nil
@@ -1158,7 +1157,7 @@ func (s *SMBServer) handleCreate(cs *connState, h *smb2Hdr, buf []byte) []byte {
 		IsDir:         fi.IsDir(),
 		DeleteOnClose: (createOptions & FILE_DELETE_ON_CLOSE) != 0,
 		AccessMask:    desiredAccess,
-		Modified: createAction == FILE_CREATED || createAction == FILE_OVERWRITTEN,
+		Modified:      createAction == FILE_CREATED || createAction == FILE_OVERWRITTEN,
 	}
 	cs.addHandle(handle)
 
@@ -1279,7 +1278,6 @@ func buildMxAcContext(maxAccess uint32) []byte {
 	putle32(ctx, 28, maxAccess)      // MaximalAccess
 	return ctx
 }
-
 
 // buildQFidContext builds a SMB2_CREATE_QUERY_ON_DISK_ID_RESPONSE create context.
 // Layout (56 bytes): 16-byte header | "QFid" (4) | pad (4) | DiskFileId (16) | VolumeId (16)
@@ -1973,8 +1971,8 @@ func buildFileAllInfo(fi os.FileInfo, handle *smbHandle) []byte {
 	std := buildFileStandardInfo(fi) // 24
 	internal := make([]byte, 8)      // FileInternalInformation: 8
 	putle64(internal, 0, inodeNumber(fi))
-	ea := make([]byte, 4)            // FileEaInformation: 4
-	access := make([]byte, 4)        // FileAccessInformation: 4
+	ea := make([]byte, 4)     // FileEaInformation: 4
+	access := make([]byte, 4) // FileAccessInformation: 4
 	putle32(access, 0, handle.AccessMask)
 	pos := make([]byte, 8)   // FilePositionInformation: 8
 	mode := make([]byte, 4)  // FileModeInformation: 4

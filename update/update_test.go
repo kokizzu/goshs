@@ -4,8 +4,8 @@ import (
 	"testing"
 
 	"github.com/google/go-github/v85/github"
-	"goshs.de/goshs/v2/goshsversion"
 	"github.com/stretchr/testify/require"
+	"goshs.de/goshs/v2/goshsversion"
 )
 
 func TestCheckForUpdates(t *testing.T) {

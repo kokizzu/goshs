@@ -99,10 +99,10 @@ func cat(slices ...[]byte) []byte {
 	return buf.Bytes()
 }
 
-func berSeq(children ...[]byte) []byte  { return tlv(tagSequence, cat(children...)) }
-func berSet(children ...[]byte) []byte  { return tlv(tagSet, cat(children...)) }
-func berStr(s string) []byte            { return tlv(tagOctetString, []byte(s)) }
-func berEnum(v int) []byte              { return tlv(tagEnum, []byte{byte(v)}) }
+func berSeq(children ...[]byte) []byte { return tlv(tagSequence, cat(children...)) }
+func berSet(children ...[]byte) []byte { return tlv(tagSet, cat(children...)) }
+func berStr(s string) []byte           { return tlv(tagOctetString, []byte(s)) }
+func berEnum(v int) []byte             { return tlv(tagEnum, []byte{byte(v)}) }
 func berInt(v int) []byte {
 	if v >= 0 && v <= 127 {
 		return tlv(tagInteger, []byte{byte(v)})

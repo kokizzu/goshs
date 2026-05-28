@@ -6,11 +6,11 @@ import (
 	"testing"
 
 	"github.com/miekg/dns"
+	"github.com/stretchr/testify/require"
 	"goshs.de/goshs/v2/clipboard"
 	"goshs.de/goshs/v2/options"
 	"goshs.de/goshs/v2/webhook"
 	"goshs.de/goshs/v2/ws"
-	"github.com/stretchr/testify/require"
 )
 
 func newTestServer() *DNSServer {
@@ -51,14 +51,16 @@ type mockResponseWriter struct {
 	remote  string
 }
 
-func (m *mockResponseWriter) LocalAddr() net.Addr          { return &net.UDPAddr{} }
-func (m *mockResponseWriter) RemoteAddr() net.Addr         { return &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12345} }
-func (m *mockResponseWriter) WriteMsg(msg *dns.Msg) error  { m.written = msg; return nil }
-func (m *mockResponseWriter) Write(b []byte) (int, error)  { return len(b), nil }
-func (m *mockResponseWriter) Close() error                 { return nil }
-func (m *mockResponseWriter) TsigStatus() error            { return nil }
-func (m *mockResponseWriter) TsigTimersOnly(bool)          {}
-func (m *mockResponseWriter) Hijack()                      {}
+func (m *mockResponseWriter) LocalAddr() net.Addr { return &net.UDPAddr{} }
+func (m *mockResponseWriter) RemoteAddr() net.Addr {
+	return &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 12345}
+}
+func (m *mockResponseWriter) WriteMsg(msg *dns.Msg) error { m.written = msg; return nil }
+func (m *mockResponseWriter) Write(b []byte) (int, error) { return len(b), nil }
+func (m *mockResponseWriter) Close() error                { return nil }
+func (m *mockResponseWriter) TsigStatus() error           { return nil }
+func (m *mockResponseWriter) TsigTimersOnly(bool)         {}
+func (m *mockResponseWriter) Hijack()                     {}
 
 func TestDNSHandler_ARecord(t *testing.T) {
 	s := newTestServer()

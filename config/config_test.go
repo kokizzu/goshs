@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"goshs.de/goshs/v2/options"
 	"github.com/stretchr/testify/require"
+	"goshs.de/goshs/v2/options"
 )
 
 func writeTempConfig(t *testing.T, cfg Config) string {
@@ -24,10 +24,10 @@ func writeTempConfig(t *testing.T, cfg Config) string {
 
 func TestLoadConfig_BasicFields(t *testing.T) {
 	cfg := Config{
-		Interface: "127.0.0.1",
-		Port:      9090,
-		Directory: "/tmp/testroot",
-		SSL:       true,
+		Interface:  "127.0.0.1",
+		Port:       9090,
+		Directory:  "/tmp/testroot",
+		SSL:        true,
 		SelfSigned: true,
 	}
 

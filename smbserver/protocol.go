@@ -26,9 +26,9 @@ const (
 	SMB2_CANCEL          uint16 = 0x000C
 	SMB2_ECHO            uint16 = 0x000D
 	SMB2_QUERY_DIRECTORY uint16 = 0x000E
-	SMB2_CHANGE_NOTIFY  uint16 = 0x000F
-	SMB2_QUERY_INFO     uint16 = 0x0010
-	SMB2_SET_INFO       uint16 = 0x0011
+	SMB2_CHANGE_NOTIFY   uint16 = 0x000F
+	SMB2_QUERY_INFO      uint16 = 0x0010
+	SMB2_SET_INFO        uint16 = 0x0011
 )
 
 // -- SMB2 access mask flags
@@ -158,9 +158,9 @@ const (
 	FileDispositionInformation uint8 = 13
 	FilePositionInformation    uint8 = 14
 	FileModeInformation        uint8 = 16
-	FileAllInformation          uint8 = 18
-	FileAllocationInformation   uint8 = 19
-	FileEndOfFileInformation    uint8 = 20
+	FileAllInformation         uint8 = 18
+	FileAllocationInformation  uint8 = 19
+	FileEndOfFileInformation   uint8 = 20
 	FileStreamInformation      uint8 = 22
 	FileNetworkOpenInformation uint8 = 34
 )

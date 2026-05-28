@@ -8,11 +8,11 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/pkg/sftp"
+	"github.com/stretchr/testify/require"
 	"goshs.de/goshs/v2/httpserver"
 	"goshs.de/goshs/v2/options"
 	"goshs.de/goshs/v2/webhook"
-	"github.com/pkg/sftp"
-	"github.com/stretchr/testify/require"
 )
 
 func testSFTPServer(root string) *SFTPServer {

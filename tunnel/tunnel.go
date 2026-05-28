@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"goshs.de/goshs/v2/logger"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
+	"goshs.de/goshs/v2/logger"
 )
 
 // HostKeyMismatchError is returned by Start when the server presents a host

@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"goshs.de/goshs/v2/clipboard"
 	"github.com/stretchr/testify/require"
+	"goshs.de/goshs/v2/clipboard"
 )
 
 func TestDispatchReadPump_NewEntry(t *testing.T) {

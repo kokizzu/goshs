@@ -14,8 +14,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"goshs.de/goshs/v2/logger"
 	"github.com/skip2/go-qrcode"
+	"goshs.de/goshs/v2/logger"
 )
 
 // sanitizePath validates that requestPath stays within root after decoding and

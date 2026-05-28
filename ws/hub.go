@@ -33,11 +33,11 @@ type Hub struct {
 	cliEnabled bool
 
 	// Ring BUffers - capped storage survives client reconnect
-	HTTPLog  *RingBuffer
-	DNSLog   *RingBuffer
-	SMTPLog  *RingBuffer
-	SMBLog   *RingBuffer
-	LDAPLog  *RingBuffer
+	HTTPLog *RingBuffer
+	DNSLog  *RingBuffer
+	SMTPLog *RingBuffer
+	SMBLog  *RingBuffer
+	LDAPLog *RingBuffer
 }
 
 // NewHub will create a new hub

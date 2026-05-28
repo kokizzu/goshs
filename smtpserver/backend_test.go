@@ -4,11 +4,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"goshs.de/goshs/v2/clipboard"
 	"goshs.de/goshs/v2/options"
 	"goshs.de/goshs/v2/webhook"
 	"goshs.de/goshs/v2/ws"
-	"github.com/stretchr/testify/require"
 )
 
 func TestAuthPlain(t *testing.T) {

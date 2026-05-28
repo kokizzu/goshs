@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"goshs.de/goshs/v2/options"
 	"github.com/stretchr/testify/require"
+	"goshs.de/goshs/v2/options"
 )
 
 func TestSanitize_EmptyWebroot(t *testing.T) {

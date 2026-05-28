@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"goshs.de/goshs/v2/webhook"
 	"github.com/pkg/sftp"
 	"github.com/stretchr/testify/require"
+	"goshs.de/goshs/v2/webhook"
 )
 
 var sftpserver *SFTPServer = &SFTPServer{

@@ -4,8 +4,8 @@ import (
 	"errors"
 	"io"
 
-	"goshs.de/goshs/v2/logger"
 	"github.com/pkg/sftp"
+	"goshs.de/goshs/v2/logger"
 )
 
 // ReadOnlyHandler is an SFTP handler that only allows read operations

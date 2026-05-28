@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
 	"goshs.de/goshs/v2/clipboard"
 	"goshs.de/goshs/v2/smtpattach"
 	"goshs.de/goshs/v2/webhook"
 	"goshs.de/goshs/v2/ws"
-	"github.com/stretchr/testify/require"
 )
 
 // newTestFileServer returns a minimal FileServer wired to a running Hub so that
