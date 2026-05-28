@@ -4,7 +4,7 @@
 [![GitHub issues](https://img.shields.io/github/issues-raw/patrickhener/goshs)](https://github.com/goshs-labs/goshs/issues)
 ![goreleaser](https://github.com/goshs-labs/goshs/workflows/goreleaser/badge.svg)
 [![Go Report Card](https://goreportcard.com/badge/goshs.de/goshs/v2)](https://goreportcard.com/report/goshs.de/goshs/v2)
-[![codecov](https://codecov.io/gh/patrickhener/goshs/branch/main/graph/badge.svg)](https://codecov.io/gh/patrickhener/goshs)
+[![codecov](https://codecov.io/gh/goshs-labs/goshs/branch/main/graph/badge.svg)](https://codecov.io/gh/goshs-labs/goshs)
 
 <img src="https://github.com/patrickhener/image-cdn/blob/main/goshs-banner-light.png?raw=true" alt="goshs-logo" height="100">
 
