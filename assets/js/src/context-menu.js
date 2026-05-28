@@ -20,11 +20,7 @@ export function initContextMenu() {
       closeCtx();
     };
     document.getElementById("ctx-open").onclick = () => {
-      if (previewType) {
-        previewFile(name);
-      } else {
-        window.location.href = name + (isDir ? "/" : "");
-      }
+      window.open(name + (isDir ? "/" : ""), "_blank");
       closeCtx();
     };
     document.getElementById("ctx-download").onclick = () => {
