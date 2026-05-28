@@ -226,12 +226,34 @@ func (fs *FileServer) SetupMux(mux *CustomMux, what string) string {
 			},
 		}
 
+		// Enforce mode flags on WebDAV verbs
+		wdGuard := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodPut, "MKCOL", "MOVE", "COPY":
+				if fs.ReadOnly {
+					http.Error(w, "read-only", http.StatusForbidden)
+					return
+				}
+			case http.MethodDelete:
+				if fs.ReadOnly || fs.UploadOnly || fs.NoDelete {
+					http.Error(w, "delete disabled", http.StatusForbidden)
+					return
+				}
+			case http.MethodGet, http.MethodHead:
+				if fs.UploadOnly {
+					http.Error(w, "upload-only", http.StatusForbidden)
+					return
+				}
+			}
+			wdHandler.ServeHTTP(w, r)
+		})
+
 		// Check Basic Auth and use middleware
 		if fs.User != "" || fs.Pass != "" {
-			authHandler := fs.BasicAuthMiddleware(wdHandler)
+			authHandler := fs.BasicAuthMiddleware(wdGuard)
 			mux.Handle("/", authHandler)
 		} else {
-			mux.Handle("/", wdHandler)
+			mux.Handle("/", wdGuard)
 		}
 		addr = net.JoinHostPort(fs.IP, strconv.Itoa(fs.WebdavPort))
 	default:
