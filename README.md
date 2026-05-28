@@ -1,5 +1,5 @@
 ![Version](https://img.shields.io/badge/Version-v2.0.9-green)
-![GitHub License](https://img.shields.io/github/license/goshs-labs/goshs)
+[![GitHub License](https://img.shields.io/github/license/goshs-labs/goshs)](https://github.com/goshs-labs/goshs/blob/main/LICENSE)
 ![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/patrickhener/goshs)
 [![GitHub issues](https://img.shields.io/github/issues-raw/patrickhener/goshs)](https://github.com/goshs-labs/goshs/issues)
 ![goreleaser](https://github.com/goshs-labs/goshs/workflows/goreleaser/badge.svg)
