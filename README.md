@@ -5,7 +5,6 @@
 ![goreleaser](https://github.com/goshs-labs/goshs/workflows/goreleaser/badge.svg)
 [![Go Report Card](https://goreportcard.com/badge/goshs.de/goshs/v2)](https://goreportcard.com/report/goshs.de/goshs/v2)
 [![codecov](https://codecov.io/gh/patrickhener/goshs/branch/main/graph/badge.svg)](https://codecov.io/gh/patrickhener/goshs)
-[![GitHub stars](https://img.shields.io/github/stars/patrickhener/goshs?style=social)](https://github.com/goshs-labs/goshs/stargazers)
 
 <img src="https://github.com/patrickhener/image-cdn/blob/main/goshs-banner-light.png?raw=true" alt="goshs-logo" height="100">
 
@@ -142,7 +141,7 @@ Join the Discord Community and start connecting.
 
 # Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=patrickhener/goshs&type=date&legend=top-left)](https://www.star-history.com/#patrickhener/goshs&type=date&legend=top-left)
+[![Star History Chart](https://api.star-history.com/svg?repos=goshs-labs/goshs&type=date&legend=top-left)](https://www.star-history.com/#goshs-labs/goshs&type=date&legend=top-left)
 
 # Credits
 
