@@ -3,7 +3,7 @@
 ![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/patrickhener/goshs)
 [![GitHub issues](https://img.shields.io/github/issues-raw/patrickhener/goshs)](https://github.com/goshs-labs/goshs/issues)
 ![goreleaser](https://github.com/goshs-labs/goshs/workflows/goreleaser/badge.svg)
-[![Go Report Card](https://goreportcard.com/badge/github.com/goshs-labs/goshs)](https://goreportcard.com/report/github.com/goshs-labs/goshs)
+[![Go Report Card](https://goreportcard.com/badge/goshs.de/goshs/v2)](https://goreportcard.com/report/goshs.de/goshs/v2)
 [![codecov](https://codecov.io/gh/patrickhener/goshs/branch/main/graph/badge.svg)](https://codecov.io/gh/patrickhener/goshs)
 [![GitHub stars](https://img.shields.io/github/stars/patrickhener/goshs?style=social)](https://github.com/goshs-labs/goshs/stargazers)
 
