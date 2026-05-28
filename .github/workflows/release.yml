@@ -56,7 +56,7 @@ jobs:
             -F "ownername=patrickhener" \
             -F "projectname=goshs" \
             -F "scmtype=git" \
-            -F "clone_url=https://github.com/patrickhener/goshs" \
+            -F "clone_url=https://github.com/goshs-labs/goshs" \
             -F "committish=${{ github.ref_name }}" \
             -F "spec=packaging/rpm/goshs.spec" \
             -F "srpm_build_method=rpkg" \

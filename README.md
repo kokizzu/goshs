@@ -1,11 +1,11 @@
 ![Version](https://img.shields.io/badge/Version-v2.0.9-green)
-[![GitHub](https://img.shields.io/github/license/patrickhener/goshs)](https://github.com/patrickhener/goshs/blob/master/LICENSE)
+[![GitHub](https://img.shields.io/github/license/patrickhener/goshs)](https://github.com/goshs-labs/goshs/blob/master/LICENSE)
 ![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/patrickhener/goshs)
-[![GitHub issues](https://img.shields.io/github/issues-raw/patrickhener/goshs)](https://github.com/patrickhener/goshs/issues)
-![goreleaser](https://github.com/patrickhener/goshs/workflows/goreleaser/badge.svg)
-[![Go Report Card](https://goreportcard.com/badge/github.com/patrickhener/goshs)](https://goreportcard.com/report/github.com/patrickhener/goshs)
+[![GitHub issues](https://img.shields.io/github/issues-raw/patrickhener/goshs)](https://github.com/goshs-labs/goshs/issues)
+![goreleaser](https://github.com/goshs-labs/goshs/workflows/goreleaser/badge.svg)
+[![Go Report Card](https://goreportcard.com/badge/github.com/goshs-labs/goshs)](https://goreportcard.com/report/github.com/goshs-labs/goshs)
 [![codecov](https://codecov.io/gh/patrickhener/goshs/branch/main/graph/badge.svg)](https://codecov.io/gh/patrickhener/goshs)
-[![GitHub stars](https://img.shields.io/github/stars/patrickhener/goshs?style=social)](https://github.com/patrickhener/goshs/stargazers)
+[![GitHub stars](https://img.shields.io/github/stars/patrickhener/goshs?style=social)](https://github.com/goshs-labs/goshs/stargazers)
 
 <img src="https://github.com/patrickhener/image-cdn/blob/main/goshs-banner-light.png?raw=true" alt="goshs-logo" height="100">
 
@@ -80,7 +80,7 @@ For a detailed documentation go to [docs.goshs.de](https://docs.goshs.de)
 | 🪟 **winget** | `winget install PatrickHener.Goshs` |
 | 🍫 **Chocolatey** | `choco install goshs` |
 | 🐳 **Docker** | `docker run --rm -it -p 8000:8000 -v "$PWD:/pwd" patrickhener/goshs:latest -d /pwd` |
-| 📦 **Release** | [Download from GitHub Releases](https://github.com/patrickhener/goshs/releases) |
+| 📦 **Release** | [Download from GitHub Releases](https://github.com/goshs-labs/goshs/releases) |
 
 <details>
 <summary>🐚 Shell completion</summary>
@@ -108,7 +108,7 @@ source ~/.local/share/bash-completion/completions/goshs
 Building requirements are [esbuild](https://github.com/evanw/esbuild) and [sass](https://sass-lang.com/install). After installing these packages run:
 
 ```bash
-git clone https://github.com/patrickhener/goshs.git
+git clone https://github.com/goshs-labs/goshs.git
 cd goshs
 make build-all
 ```
@@ -117,7 +117,7 @@ make build-all
 
 # Code Contributors
 
-[![Contributors](https://contrib.rocks/image?repo=patrickhener/goshs)](https://github.com/patrickhener/goshs/graphs/contributors)
+[![Contributors](https://contrib.rocks/image?repo=patrickhener/goshs)](https://github.com/goshs-labs/goshs/graphs/contributors)
 
 # Security Contributors
 

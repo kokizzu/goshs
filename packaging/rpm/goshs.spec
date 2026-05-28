@@ -4,7 +4,7 @@ Release:        1%{?dist}
 Summary:        Beyond Python's http.server — single-binary file server for pentesters
 
 License:        MIT
-URL:            https://github.com/patrickhener/goshs
+URL:            https://github.com/goshs-labs/goshs
 Source0:        %{url}/archive/refs/tags/v%{version}.tar.gz#/%{name}-%{version}.tar.gz
 
 BuildRequires:  golang
