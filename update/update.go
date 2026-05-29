@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	owner           = "patrickhener"
+	owner           = "goshs-labs"
 	repo            = "goshs"
 	GOSHS_CHECKSUMS = "checksums.txt"
 )

@@ -53,7 +53,7 @@ jobs:
           curl -sf --retry 5 --retry-delay 10 --retry-all-errors \
             -X POST \
             --user "${COPR_LOGIN}:${COPR_TOKEN}" \
-            -F "ownername=patrickhener" \
+            -F "ownername=goshs-labs" \
             -F "projectname=goshs" \
             -F "scmtype=git" \
             -F "clone_url=https://github.com/goshs-labs/goshs" \

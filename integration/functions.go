@@ -89,7 +89,7 @@ func spawnTestContainer(t *testing.T, config string, webdav bool, smb bool) nat.
 		FromDockerfile: testcontainers.FromDockerfile{
 			Context:    dockerfilePath,
 			Dockerfile: "Dockerfile",
-			Repo:       "patrickhener/goshs",
+			Repo:       "goshs-labs/goshs",
 			Tag:        "integration",
 		},
 		HostConfigModifier: func(hc *container.HostConfig) {

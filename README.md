@@ -71,14 +71,14 @@ For a detailed documentation go to [docs.goshs.de](https://docs.goshs.de)
 | 🖤 **BlackArch** | `pacman -S goshs` |
 | 🏔️ **Alpine Linux (edge)** | `apk add goshs` |
 | 🫙 **Snap** | `snap install goshs` |
-| 🎩 **Fedora / RHEL (COPR)** | `dnf copr enable patrickhener/goshs && dnf install goshs` |
+| 🎩 **Fedora / RHEL (COPR)** | `dnf copr enable goshs-labs/goshs && dnf install goshs` |
 | 🦎 **openSUSE** | `sudo zypper install goshs` |
 | ❄️ **Nix / NixOS** | `nix-env -iA nixpkgs.goshs` |
 | 🍺 **Homebrew** | `brew install goshs` |
 | 🪟 **Scoop** | `scoop bucket add extras && scoop install extras/goshs` |
 | 🪟 **winget** | `winget install PatrickHener.Goshs` |
 | 🍫 **Chocolatey** | `choco install goshs` |
-| 🐳 **Docker** | `docker run --rm -it -p 8000:8000 -v "$PWD:/pwd" patrickhener/goshs:latest -d /pwd` |
+| 🐳 **Docker** | `docker run --rm -it -p 8000:8000 -v "$PWD:/pwd" goshs-labs/goshs:latest -d /pwd` |
 | 📦 **Release** | [Download from GitHub Releases](https://github.com/goshs-labs/goshs/releases) |
 
 <details>
@@ -116,7 +116,7 @@ make build-all
 
 # Code Contributors
 
-[![Contributors](https://contrib.rocks/image?repo=patrickhener/goshs)](https://github.com/goshs-labs/goshs/graphs/contributors)
+[![Contributors](https://contrib.rocks/image?repo=goshs-labs/goshs)](https://github.com/goshs-labs/goshs/graphs/contributors)
 
 # Security Contributors
 

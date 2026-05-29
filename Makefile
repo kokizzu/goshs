@@ -110,10 +110,10 @@ endif
 	@git push
 	@git tag $(VERSION)
 	@git push origin $(VERSION)
-	@docker build -t patrickhener/goshs:$(VERSION) .
-	@docker build -t patrickhener/goshs:latest .
-	@docker push patrickhener/goshs:$(VERSION)
-	@docker push patrickhener/goshs:latest
+	@docker build -t goshslabs/goshs:$(VERSION) .
+	@docker build -t goshslabs/goshs:latest .
+	@docker push goshslabs/goshs:$(VERSION)
+	@docker push goshslabs/goshs:latest
 
 run-unit: clean-tests
 	@go test ./ca -count=1
