@@ -108,7 +108,7 @@ endif
 	@git add goshsversion/version.go README.md packaging/rpm/goshs.spec
 	@git commit -m "New version $(VERSION)"
 	@git push
-	@git tag $(VERSION)
+	@git tag -a $(VERSION) -m "Release $(VERSION)"
 	@git push origin $(VERSION)
 	@docker build -t goshslabs/goshs:$(VERSION) .
 	@docker build -t goshslabs/goshs:latest .
