@@ -28,7 +28,9 @@ func ServeCatcherWS(mgr *Manager, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	conn, err := websocket.Accept(w, r, nil)
+	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+		OriginPatterns: []string{r.Host},
+	})
 	if err != nil {
 		logger.Errorf("catcher ws: accept failed: %v", err)
 		return

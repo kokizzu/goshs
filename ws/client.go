@@ -150,7 +150,9 @@ func (c *Client) writePump() {
 
 // ServeWS will handle the socket connections
 func ServeWS(hub *Hub, w http.ResponseWriter, r *http.Request) bool {
-	conn, err := websocket.Accept(w, r, nil)
+	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+		OriginPatterns: []string{r.Host},
+	})
 	if err != nil {
 		logger.Errorf("Failed to upgrade ws: %+v", err)
 		return false

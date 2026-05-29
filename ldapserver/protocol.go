@@ -45,6 +45,8 @@ func readBERLength(r io.Reader) (int, error) {
 	return int(binary.BigEndian.Uint32(buf)), nil
 }
 
+const maxTLVSize = 1 << 20 // 1 MB — prevents OOM from crafted length fields
+
 // readTLV reads one BER TLV element and returns its tag and value bytes.
 func readTLV(r io.Reader) (tag byte, val []byte, err error) {
 	var t [1]byte
@@ -55,6 +57,9 @@ func readTLV(r io.Reader) (tag byte, val []byte, err error) {
 	l, e := readBERLength(r)
 	if e != nil {
 		return 0, nil, e
+	}
+	if l > maxTLVSize {
+		return 0, nil, fmt.Errorf("TLV length %d exceeds maximum allowed size", l)
 	}
 	val = make([]byte, l)
 	_, err = io.ReadFull(r, val)

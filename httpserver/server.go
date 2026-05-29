@@ -92,7 +92,7 @@ func NewHttpServer(opts *options.Options, hub *ws.Hub, clip *clipboard.Clipboard
 		MaxUpload:    opts.MaxUploadSize,
 		Options:      opts,
 		CSRFToken:    generateCSRFToken(),
-		authCache:    make(map[string]bool),
+		authCache:    make(map[string]time.Time),
 		authFailures: make(map[string]*authFailEntry),
 	}
 

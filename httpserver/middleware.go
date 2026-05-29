@@ -29,19 +29,18 @@ func (fs *FileServer) verifyCredentials(r *http.Request) (authVal string, ok boo
 	}
 	authVal = auth[len("Basic "):]
 
-	// Fast path: already verified this credential in this instance
+	// Fast path: already verified this credential recently (5-minute TTL)
 	fs.authCacheMu.RLock()
-	cached := fs.authCache[authVal]
+	exp, cached := fs.authCache[authVal]
 	fs.authCacheMu.RUnlock()
-	if cached {
+	if cached && time.Now().Before(exp) {
 		return authVal, true
 	}
 
-	// Rate-limit check: reject IPs that have exceeded the failure threshold
-	clientIP, _, _ := net.SplitHostPort(r.RemoteAddr)
-	if clientIP == "" {
-		clientIP = r.RemoteAddr
-	}
+	// Rate-limit check: reject IPs that have exceeded the failure threshold.
+	// Use the resolved client IP (honours X-Forwarded-For for trusted proxies)
+	// so that clients behind a reverse proxy each have their own counter.
+	clientIP := GetClientIP(r, fs.Whitelist)
 	fs.authFailMu.Lock()
 	if fs.authFailures == nil {
 		fs.authFailures = make(map[string]*authFailEntry)
@@ -94,9 +93,9 @@ func (fs *FileServer) verifyCredentials(r *http.Request) (authVal string, ok boo
 
 	fs.authCacheMu.Lock()
 	if fs.authCache == nil {
-		fs.authCache = make(map[string]bool)
+		fs.authCache = make(map[string]time.Time)
 	}
-	fs.authCache[authVal] = true
+	fs.authCache[authVal] = time.Now().Add(5 * time.Minute)
 	fs.authCacheMu.Unlock()
 
 	return authVal, true
@@ -196,7 +195,7 @@ func GetClientIP(r *http.Request, whitelist *Whitelist) string {
 		return r.RemoteAddr
 	}
 
-	if whitelist.IsTrustedProxy(host) {
+	if whitelist != nil && whitelist.IsTrustedProxy(host) {
 		// Check X-Forwarded-For header first (for proxies)
 		xff := r.Header.Get("X-Forwarded-For")
 		if xff != "" {

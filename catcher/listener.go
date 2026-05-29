@@ -7,7 +7,6 @@ import (
 	"net"
 	"strconv"
 	"sync"
-	"time"
 
 	"goshs.de/goshs/v2/logger"
 )
@@ -136,7 +135,9 @@ type ListenerInfo struct {
 }
 
 func generateID() string {
-	b := make([]byte, 4)
-	rand.Read(b)
-	return hex.EncodeToString(b) + fmt.Sprintf("%d", time.Now().UnixNano()%1000)
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		panic("catcher: failed to generate ID: " + err.Error())
+	}
+	return hex.EncodeToString(b)
 }

@@ -23,15 +23,18 @@ type DNSServer struct {
 }
 
 func NewDNSServer(opts *options.Options, hub *ws.Hub, wh *webhook.Webhook) *DNSServer {
+	replyIP := opts.DNSIP
+	if replyIP == "" {
+		replyIP = "0.0.0.0"
+	}
 	return &DNSServer{
 		IP:      "0.0.0.0",
-		ReplyIP: opts.DNSIP,
+		ReplyIP: replyIP,
 		Port:    opts.DNSPort,
 		Hub:     hub,
 		Silent:  opts.Silent,
 		WebHook: wh,
 	}
-
 }
 
 func (d *DNSServer) handler(w dns.ResponseWriter, r *dns.Msg) {
@@ -56,11 +59,6 @@ func (d *DNSServer) handler(w dns.ResponseWriter, r *dns.Msg) {
 
 		// If webhook is enabled, send the DNS query to the webhook endpoint
 		logger.HandleWebhookSend(fmt.Sprintf("[DNS] - Source: %s - Type: %s - Query: %s", event.Source, event.QType, event.Name), "dns", *d.WebHook)
-
-		// If ReplyIP is not set, use the same IP as the DNS server
-		if d.ReplyIP == "" {
-			d.ReplyIP = d.IP
-		}
 
 		switch q.Qtype {
 		case dns.TypeA:

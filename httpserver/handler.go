@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -125,7 +126,7 @@ func (fs *FileServer) doFile(file *os.File, w http.ResponseWriter, req *http.Req
 // Anything else — a browser request from a different origin without a valid
 // token — is rejected.
 func (fs *FileServer) checkCSRF(w http.ResponseWriter, req *http.Request) bool {
-	if req.Header.Get("X-CSRF-Token") == fs.CSRFToken {
+	if subtle.ConstantTimeCompare([]byte(req.Header.Get("X-CSRF-Token")), []byte(fs.CSRFToken)) == 1 {
 		return true
 	}
 
@@ -1108,8 +1109,9 @@ func (fs *FileServer) handleSMTPAttachment(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	safeName := strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(a.Filename)
 	w.Header().Set("Content-Type", a.ContentType)
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, a.Filename))
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, safeName))
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", a.Size))
 	_, err := w.Write(a.Data)
 	if err != nil {

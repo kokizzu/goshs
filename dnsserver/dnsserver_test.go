@@ -146,18 +146,14 @@ func TestDNSHandler_MultipleQuestions(t *testing.T) {
 }
 
 func TestDNSHandler_ReplyIPFallback(t *testing.T) {
-	// When ReplyIP is empty, it should fall back to the server's IP.
+	// When opts.DNSIP is empty, NewDNSServer should default ReplyIP to "0.0.0.0".
 	cb := clipboard.New()
 	hub := ws.NewHub(cb, false)
 	go hub.Run()
 	wh := webhook.Register(false, "", "discord", []string{})
 
-	s := &DNSServer{
-		IP:      "192.168.0.1",
-		ReplyIP: "", // empty — should fall back to IP
-		Hub:     hub,
-		WebHook: wh,
-	}
+	opts := &options.Options{DNSIP: ""} // empty — constructor should default to 0.0.0.0
+	s := NewDNSServer(opts, hub, wh)
 
 	req := new(dns.Msg)
 	req.SetQuestion("test.local.", dns.TypeA)
@@ -168,5 +164,5 @@ func TestDNSHandler_ReplyIPFallback(t *testing.T) {
 	require.NotNil(t, w.written)
 	require.Len(t, w.written.Answer, 1)
 	a := w.written.Answer[0].(*dns.A)
-	require.Equal(t, "192.168.0.1", a.A.String())
+	require.Equal(t, "0.0.0.0", a.A.String())
 }

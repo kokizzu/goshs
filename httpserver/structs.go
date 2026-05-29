@@ -93,7 +93,7 @@ type FileServer struct {
 	Options        *options.Options
 	CatcherMgr     *catcher.Manager
 	CSRFToken      string
-	authCache      map[string]bool
+	authCache      map[string]time.Time // expiry time per verified credential
 	authCacheMu    sync.RWMutex
 	authFailures   map[string]*authFailEntry
 	authFailMu     sync.Mutex

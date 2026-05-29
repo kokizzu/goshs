@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"runtime"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/bcrypt"
@@ -30,7 +31,7 @@ func newFS(user, pass string) *FileServer {
 		User:        user,
 		Pass:        pass,
 		SharedLinks: map[string]SharedLink{},
-		authCache:   make(map[string]bool),
+		authCache:   make(map[string]time.Time),
 	}
 }
 

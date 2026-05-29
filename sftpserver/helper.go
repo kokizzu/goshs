@@ -196,20 +196,10 @@ func cmdFile(root string, r *sftp.Request, ip string, sftpServer *SFTPServer) er
 				sftpServer.HandleWebhookSend("sftp", r, ip, true)
 				return fmt.Errorf("chmod failed %w", err)
 			}
-			return nil
 		}
 		logger.LogSFTPRequest(r, ip)
 		sftpServer.HandleWebhookSend("sftp", r, ip, false)
-		err := os.Chmod(fullPath, os.FileMode(r.Attributes().Mode))
-		if err != nil {
-			logger.LogSFTPRequestBlocked(r, ip, err)
-			sftpServer.HandleWebhookSend("sftp", r, ip, true)
-			return err
-		} else {
-			logger.LogSFTPRequest(r, ip)
-			sftpServer.HandleWebhookSend("sftp", r, ip, false)
-			return err
-		}
+		return nil
 
 	case "Rename":
 		targetPath, err := sanitizePath(r.Target, root)
