@@ -76,7 +76,7 @@ For a detailed documentation go to [docs.goshs.de](https://docs.goshs.de)
 | ❄️ **Nix / NixOS** | `nix-env -iA nixpkgs.goshs` |
 | 🍺 **Homebrew** | `brew install goshs` |
 | 🪟 **Scoop** | `scoop bucket add extras && scoop install extras/goshs` |
-| 🪟 **winget** | `winget install PatrickHener.Goshs` |
+| 🪟 **winget** | `winget install GoshsLabs.Goshs` |
 | 🍫 **Chocolatey** | `choco install goshs` |
 | 🐳 **Docker** | `docker run --rm -it -p 8000:8000 -v "$PWD:/pwd" goshs-labs/goshs:latest -d /pwd` |
 | 📦 **Release** | [Download from GitHub Releases](https://github.com/goshs-labs/goshs/releases) |
