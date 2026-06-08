@@ -290,6 +290,22 @@ function fmtHeaders(headers) {
     .join("\n");
 }
 
+// ══ THROTTLED RENDERING ══
+// WS log events (HTTP/DNS/SMB/LDAP/SMTP) can arrive in fast bursts — e.g. a
+// client recursively scanning a hosted folder generates thousands of HTTP
+// events within seconds. Re-rendering the full table (hundreds of rows torn
+// down and rebuilt) on every single event outpaces the browser's GC and
+// balloons memory. Coalesce bursts into at most one render per frame.
+const pendingRenders = new Set();
+function scheduleRender(key, renderFn) {
+  if (pendingRenders.has(key)) return;
+  pendingRenders.add(key);
+  requestAnimationFrame(() => {
+    pendingRenders.delete(key);
+    renderFn();
+  });
+}
+
 // ══ HTTP LOG ══
 function onHTTP(e) {
   ST.httpEvents.unshift(e);
@@ -297,7 +313,7 @@ function onHTTP(e) {
   ST.httpCnt++;
   updateBadge("http-badge", ST.httpCnt);
   updateCollabBadge();
-  renderHTTP();
+  scheduleRender("http", renderHTTP);
 }
 
 function methodClass(m) {
@@ -497,7 +513,7 @@ function onDNS(e) {
   updateBadge("dns-cnt-txt", ST.dnsCnt.TXT);
   updateBadge("dns-cnt-other", ST.dnsCnt.other);
   updateCollabBadge();
-  renderDNS();
+  scheduleRender("dns", renderDNS);
 }
 function qtypeClass(t) {
   const map = {
@@ -565,7 +581,7 @@ function onSMB(e) {
   if (ST.smbEvents.length > 1000) ST.smbEvents.length = 1000;
   updateBadge("smb-badge", ST.smbEvents.length);
   updateCollabBadge();
-  renderSMB();
+  scheduleRender("smb", renderSMB);
 }
 
 export function renderSMB() {
@@ -699,7 +715,7 @@ function onLDAP(e) {
   if (ST.ldapEvents.length > 1000) ST.ldapEvents.length = 1000;
   updateBadge("ldap-badge", ST.ldapEvents.length);
   updateCollabBadge();
-  renderLDAP();
+  scheduleRender("ldap", renderLDAP);
 }
 
 export function renderLDAP() {
@@ -878,7 +894,7 @@ function onSMTP(e) {
   if (ST.smtpEvents.length > 1000) ST.smtpEvents.length = 1000;
   updateBadge("smtp-badge", ST.smtpEvents.length);
   updateCollabBadge();
-  renderSMTP();
+  scheduleRender("smtp", renderSMTP);
 }
 function attachIcon(contentType) {
   if (!contentType) return "";
