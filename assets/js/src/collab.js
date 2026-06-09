@@ -293,6 +293,7 @@ function fmtHeaders(headers) {
 // ══ HTTP LOG ══
 function onHTTP(e) {
   ST.httpEvents.unshift(e);
+  if (ST.httpEvents.length > 1000) ST.httpEvents.length = 1000;
   ST.httpCnt++;
   updateBadge("http-badge", ST.httpCnt);
   updateCollabBadge();
@@ -483,6 +484,7 @@ export function clearHTTP() {
 // ══ DNS LOG ══
 function onDNS(e) {
   ST.dnsEvents.unshift(e);
+  if (ST.dnsEvents.length > 1000) ST.dnsEvents.length = 1000;
   ST.dnsCnt.total++;
   if (e.qtype === "A") ST.dnsCnt.A++;
   else if (e.qtype === "MX") ST.dnsCnt.MX++;
@@ -560,6 +562,7 @@ export function clearDNS() {
 function onSMB(e) {
   console.log(e);
   ST.smbEvents.unshift(e);
+  if (ST.smbEvents.length > 1000) ST.smbEvents.length = 1000;
   updateBadge("smb-badge", ST.smbEvents.length);
   updateCollabBadge();
   renderSMB();
@@ -693,6 +696,7 @@ export function clearSMB() {
 // ══ LDAP Log ══
 function onLDAP(e) {
   ST.ldapEvents.unshift(e);
+  if (ST.ldapEvents.length > 1000) ST.ldapEvents.length = 1000;
   updateBadge("ldap-badge", ST.ldapEvents.length);
   updateCollabBadge();
   renderLDAP();
@@ -871,6 +875,7 @@ export function clearLDAP() {
 // ══ SMTP ══
 function onSMTP(e) {
   ST.smtpEvents.unshift(e);
+  if (ST.smtpEvents.length > 1000) ST.smtpEvents.length = 1000;
   updateBadge("smtp-badge", ST.smtpEvents.length);
   updateCollabBadge();
   renderSMTP();
@@ -1116,7 +1121,7 @@ export function renderSMTP() {
   empty.style.display = vis.length ? "none" : "flex";
   inbox.querySelectorAll(".mail-card").forEach((c) => c.remove());
 
-  vis.forEach((e, i) => {
+  vis.slice(0, 500).forEach((e, i) => {
     inbox.appendChild(buildMailCard(e, i === 0 && !filter));
   });
 }

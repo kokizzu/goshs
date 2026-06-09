@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -229,11 +230,23 @@ func (fs *FileServer) bulkDownload(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// Validate each path and collect absolute paths; skip any traversal attempts
+	// Validate each path, enforce .goshs ACL, and collect absolute paths.
+	// ACL checks must happen here, before any response headers are written,
+	// so that applyCustomAuth/handleError can still send a proper HTTP error.
 	for _, file := range files {
 		absPath, err := sanitizePath(fs.Webroot, file)
 		if err != nil {
 			continue
+		}
+		acl, aclErr := fs.findEffectiveACL(filepath.Dir(absPath))
+		if aclErr == nil {
+			if ok := fs.applyCustomAuth(w, req, acl); !ok {
+				return
+			}
+			if slices.Contains(acl.Block, filepath.Base(absPath)) {
+				fs.handleError(w, req, fmt.Errorf("requested file is blocked"), http.StatusNotFound)
+				return
+			}
 		}
 		filesCleaned = append(filesCleaned, absPath)
 	}

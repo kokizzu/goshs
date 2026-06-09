@@ -578,6 +578,74 @@ func TestBulkDownload_Success(t *testing.T) {
 	require.Equal(t, "application/zip", w.Header().Get("Content-Type"))
 }
 
+func TestBulkDownload_ACL_NoCredentials(t *testing.T) {
+	dir := t.TempDir()
+	protected := filepath.Join(dir, "protected")
+	require.NoError(t, os.Mkdir(protected, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(protected, "secret.txt"), []byte("secret"), 0644))
+
+	hash, err := bcrypt.GenerateFromPassword([]byte("pass"), bcrypt.MinCost)
+	require.NoError(t, err)
+	acl := fmt.Sprintf(`{"auth":"user:%s"}`, hash)
+	require.NoError(t, os.WriteFile(filepath.Join(protected, ".goshs"), []byte(acl), 0644))
+
+	fs, _ := newTestFileServer(t, dir)
+	r := httptest.NewRequest(http.MethodGet, "/?bulk&file=/protected/secret.txt", nil)
+	w := httptest.NewRecorder()
+	fs.bulkDownload(w, r)
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+func TestBulkDownload_ACL_WithCredentials(t *testing.T) {
+	dir := t.TempDir()
+	protected := filepath.Join(dir, "protected")
+	require.NoError(t, os.Mkdir(protected, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(protected, "secret.txt"), []byte("secret"), 0644))
+
+	hash, err := bcrypt.GenerateFromPassword([]byte("pass"), bcrypt.MinCost)
+	require.NoError(t, err)
+	acl := fmt.Sprintf(`{"auth":"user:%s"}`, hash)
+	require.NoError(t, os.WriteFile(filepath.Join(protected, ".goshs"), []byte(acl), 0644))
+
+	fs, _ := newTestFileServer(t, dir)
+	r := httptest.NewRequest(http.MethodGet, "/?bulk&file=/protected/secret.txt", nil)
+	r.Header.Set("Authorization", basicAuthHeader("user", "pass"))
+	w := httptest.NewRecorder()
+	fs.bulkDownload(w, r)
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, "application/zip", w.Header().Get("Content-Type"))
+}
+
+func TestBulkDownload_ACL_BlockList(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "blocked.txt"), []byte("nope"), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".goshs"), []byte(`{"block":["blocked.txt"]}`), 0644))
+
+	fs, _ := newTestFileServer(t, dir)
+	r := httptest.NewRequest(http.MethodGet, "/?bulk&file=/blocked.txt", nil)
+	w := httptest.NewRecorder()
+	fs.bulkDownload(w, r)
+	require.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestBulkDownload_ACL_InheritedFromParent(t *testing.T) {
+	dir := t.TempDir()
+	sub := filepath.Join(dir, "sub")
+	require.NoError(t, os.Mkdir(sub, 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(sub, "file.txt"), []byte("data"), 0644))
+
+	hash, err := bcrypt.GenerateFromPassword([]byte("pass"), bcrypt.MinCost)
+	require.NoError(t, err)
+	acl := fmt.Sprintf(`{"auth":"user:%s"}`, hash)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".goshs"), []byte(acl), 0644))
+
+	fs, _ := newTestFileServer(t, dir)
+	r := httptest.NewRequest(http.MethodGet, "/?bulk&file=/sub/file.txt", nil)
+	w := httptest.NewRecorder()
+	fs.bulkDownload(w, r)
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
 // ─── returnJsonDirListing tests ──────────────────────────────────────────────
 
 func TestReturnJsonDirListing(t *testing.T) {
