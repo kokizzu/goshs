@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"strconv"
+	"time"
 
 	"github.com/miekg/dns"
 	"goshs.de/goshs/v2/logger"
@@ -49,6 +50,7 @@ func (d *DNSServer) handler(w dns.ResponseWriter, r *dns.Msg) {
 			Name:   q.Name,
 			QType:  dns.TypeToString[q.Qtype],
 			Source: w.RemoteAddr().String(),
+			Time:   time.Now(),
 		}
 		eventBytes, err := json.Marshal(event)
 		if err != nil {

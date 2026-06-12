@@ -85,6 +85,11 @@ func Check(opts *options.Options) (*options.Options, error) {
 		logger.Fatal("To use certificate based authentication with a CA cert you will need tls in any mode (-ss, -sk/-sc, -p12, -sl)")
 	}
 
+	// Sanity check for self-destruct timer
+	if opts.TTL < 0 {
+		logger.Fatal("The self-destruct timer (--ttl) cannot be negative.")
+	}
+
 	// Sanity check either user:pass or keyfile when using sftp mode
 	if opts.FTP && opts.FTPSFTPMode && (opts.BasicAuth == "" && opts.FTPKeyFile == "") {
 		logger.Fatal("When using SFTP you need to either specify an authorized keyfile using -fkf or username and password using -b")

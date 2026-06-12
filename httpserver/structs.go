@@ -93,6 +93,7 @@ type FileServer struct {
 	Options        *options.Options
 	CatcherMgr     *catcher.Manager
 	CSRFToken      string
+	TTLDeadline    time.Time            // self-destruct moment; zero when --ttl is unset
 	authCache      map[string]time.Time // expiry time per verified credential
 	authCacheMu    sync.RWMutex
 	authFailures   map[string]*authFailEntry

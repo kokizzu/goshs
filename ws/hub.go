@@ -23,6 +23,14 @@ type Hub struct {
 	// Unregister requests from clients.
 	unregister chan *Client
 
+	// In-process subscribers (e.g. the TUI dashboard) that receive a copy
+	// of every broadcast message without being WebSocket clients.
+	subscribers map[chan []byte]bool
+
+	// Subscribe / unsubscribe requests for in-process subscribers.
+	subscribe   chan chan []byte
+	unsubscribe chan chan []byte
+
 	// Mutex
 	mu sync.RWMutex
 
@@ -43,17 +51,20 @@ type Hub struct {
 // NewHub will create a new hub
 func NewHub(cb *clipboard.Clipboard, cliEnabled bool) *Hub {
 	return &Hub{
-		Broadcast:  make(chan []byte),
-		register:   make(chan *Client),
-		unregister: make(chan *Client),
-		clients:    make(map[*Client]bool),
-		cb:         cb,
-		cliEnabled: cliEnabled,
-		HTTPLog:    NewRingBuffer(1000),
-		DNSLog:     NewRingBuffer(1000),
-		SMTPLog:    NewRingBuffer(1000),
-		SMBLog:     NewRingBuffer(1000),
-		LDAPLog:    NewRingBuffer(1000),
+		Broadcast:   make(chan []byte),
+		register:    make(chan *Client),
+		unregister:  make(chan *Client),
+		clients:     make(map[*Client]bool),
+		subscribers: make(map[chan []byte]bool),
+		subscribe:   make(chan chan []byte),
+		unsubscribe: make(chan chan []byte),
+		cb:          cb,
+		cliEnabled:  cliEnabled,
+		HTTPLog:     NewRingBuffer(1000),
+		DNSLog:      NewRingBuffer(1000),
+		SMTPLog:     NewRingBuffer(1000),
+		SMBLog:      NewRingBuffer(1000),
+		LDAPLog:     NewRingBuffer(1000),
 	}
 }
 
@@ -76,6 +87,21 @@ func (h *Hub) Run() {
 			}
 			h.mu.Unlock()
 
+		case sub := <-h.subscribe:
+			h.mu.Lock()
+			h.subscribers[sub] = true
+			h.mu.Unlock()
+			// Replay existing history to the new subscriber
+			go h.sendCatchupRaw(sub)
+
+		case sub := <-h.unsubscribe:
+			h.mu.Lock()
+			if _, ok := h.subscribers[sub]; ok {
+				delete(h.subscribers, sub)
+				close(sub)
+			}
+			h.mu.Unlock()
+
 		case message := <-h.Broadcast:
 			// Store in the appropriate ring buffer based on the type field
 			h.classifyAndStore(message)
@@ -87,6 +113,15 @@ func (h *Hub) Run() {
 				case client.send <- message:
 				default:
 					stale = append(stale, client)
+				}
+			}
+			// Fan out to in-process subscribers. A subscriber that cannot keep
+			// up simply drops the message — it is a display consumer, so a
+			// missed event must never block or disconnect the hub.
+			for sub := range h.subscribers {
+				select {
+				case sub <- message:
+				default:
 				}
 			}
 			h.mu.RUnlock()
@@ -128,9 +163,10 @@ func (h *Hub) classifyAndStore(msg []byte) {
 	}
 }
 
-// sendCatchup serialises up to 200 entries from each buffer and sends
-// them as a single "catchup" message to a newly connected client.
-func (h *Hub) sendCatchup(client *Client) {
+// buildCatchup serialises up to 200 entries from each ring buffer into a
+// single "catchup" message, identical to what a reconnecting browser client
+// receives. Returns nil if marshalling fails.
+func (h *Hub) buildCatchup() []byte {
 	httpEntries := h.HTTPLog.Last(200)
 	dnsEntries := h.DNSLog.Last(200)
 	smtpEntries := h.SMTPLog.Last(200)
@@ -164,10 +200,47 @@ func (h *Hub) sendCatchup(client *Client) {
 	}
 	data, err := json.Marshal(payload)
 	if err != nil {
+		return nil
+	}
+	return data
+}
+
+// sendCatchup sends the buffered history to a newly connected client.
+func (h *Hub) sendCatchup(client *Client) {
+	data := h.buildCatchup()
+	if data == nil {
 		return
 	}
 	select {
 	case client.send <- data:
 	default:
 	}
+}
+
+// sendCatchupRaw sends the buffered history to a newly registered in-process
+// subscriber channel.
+func (h *Hub) sendCatchupRaw(sub chan []byte) {
+	data := h.buildCatchup()
+	if data == nil {
+		return
+	}
+	select {
+	case sub <- data:
+	default:
+	}
+}
+
+// Subscribe registers an in-process consumer of the broadcast stream and
+// returns a channel that first receives a "catchup" message with buffered
+// history and then every subsequent broadcast. Use Unsubscribe to release it.
+func (h *Hub) Subscribe() chan []byte {
+	sub := make(chan []byte, 256)
+	h.subscribe <- sub
+	return sub
+}
+
+// Unsubscribe removes a subscriber previously registered with Subscribe and
+// closes its channel.
+func (h *Hub) Unsubscribe(sub chan []byte) {
+	h.unsubscribe <- sub
 }

@@ -5,6 +5,7 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <meta name="csrf-token" content="{{.CSRFToken}}" />
         <meta name="max-upload" content="{{.MaxUpload}}" />
+        <meta name="ttl-deadline" content="{{.TTLDeadlineUnixMs}}" />
         <title>goshs {{.GoshsVersion}} — {{.AbsPath}}</title>
         <link rel="stylesheet" href="/css/style.css?static" />
         {{if .Catcher}}
@@ -208,6 +209,24 @@
                 </button>
                 {{end}}
                 <div class="sidebar-spacer"></div>
+                {{if .TTLDeadlineUnixMs}}
+                <div
+                    class="snav ttl-indicator"
+                    id="ttl-indicator"
+                    title="Self-destruct: this instance shuts down automatically when the timer reaches zero"
+                >
+                    <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                    >
+                        <circle cx="12" cy="12" r="9" />
+                        <path d="M12 7v5l3 2" />
+                    </svg>
+                    <span class="snav-label" id="ttl-remaining">--:--</span>
+                </div>
+                {{end}}
                 <button
                     class="snav"
                     onclick="window.open('/?goshs-info', '_blank')"
@@ -2243,5 +2262,41 @@
         <script src="/js/xterm-addon-fit.min.js?static"></script>
         <script src="/js/xterm-addon-attach.min.js?static"></script>
         {{end}}
+        <script>
+            // Self-destruct countdown: render the remaining time until the
+            // server-side --ttl deadline (passed as Unix ms) and tick it down.
+            (function () {
+                var meta = document.querySelector('meta[name="ttl-deadline"]');
+                var deadline = meta ? parseInt(meta.content, 10) : 0;
+                var label = document.getElementById("ttl-remaining");
+                var box = document.getElementById("ttl-indicator");
+                if (!deadline || !label || !box) return;
+                function fmt(sec) {
+                    if (sec < 0) sec = 0;
+                    var d = Math.floor(sec / 86400);
+                    var h = Math.floor((sec % 86400) / 3600);
+                    var m = Math.floor((sec % 3600) / 60);
+                    var s = sec % 60;
+                    var p = function (n) {
+                        return (n < 10 ? "0" : "") + n;
+                    };
+                    if (d > 0) return d + "d " + p(h) + ":" + p(m) + ":" + p(s);
+                    if (h > 0) return p(h) + ":" + p(m) + ":" + p(s);
+                    return p(m) + ":" + p(s);
+                }
+                function tick() {
+                    var remaining = Math.round((deadline - Date.now()) / 1000);
+                    label.textContent = fmt(remaining);
+                    // Warn visually under a minute left.
+                    box.classList.toggle("ttl-expiring", remaining <= 60);
+                    if (remaining <= 0) {
+                        label.textContent = "00:00";
+                        clearInterval(timer);
+                    }
+                }
+                tick();
+                var timer = setInterval(tick, 1000);
+            })();
+        </script>
     </body>
 </html>

@@ -102,6 +102,13 @@ func NewHttpServer(opts *options.Options, hub *ws.Hub, clip *clipboard.Clipboard
 	fs.Whitelist = wl
 	fs.CatcherMgr = catcher.NewManager(hub)
 
+	// Fix the self-destruct deadline once at startup so the web UI can render a
+	// live countdown that keeps decreasing across page reloads, rather than
+	// resetting on every render.
+	if opts.TTL > 0 {
+		fs.TTLDeadline = time.Now().Add(opts.TTL)
+	}
+
 	return fs
 }
 

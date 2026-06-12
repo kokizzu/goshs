@@ -540,6 +540,9 @@ func (fileS *FileServer) constructDefault(w http.ResponseWriter, relpath string,
 		CSRFToken:       fileS.CSRFToken,
 		MaxUpload:       fileS.MaxUpload,
 	}
+	if !fileS.TTLDeadline.IsZero() {
+		uiData.TTLDeadlineUnixMs = fileS.TTLDeadline.UnixMilli()
+	}
 
 	err := renderIndex(w, uiData)
 	if err != nil {
