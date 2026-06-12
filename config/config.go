@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"goshs.de/goshs/v2/logger"
 	"goshs.de/goshs/v2/options"
@@ -85,6 +86,8 @@ type Config struct {
 	FTPSFTPMode         bool     `json:"ftp_sftp_mode"`
 	FTPKeyFile          string   `json:"ftp_keyfile"`
 	FTPHostKeyFile      string   `json:"ftp_host_keyfile"`
+	TTL                 int      `json:"ttl"`
+	TUI                 bool     `json:"tui"`
 }
 
 func LoadConfig(opts *options.Options) (*options.Options, error) {
@@ -167,6 +170,8 @@ func LoadConfig(opts *options.Options) (*options.Options, error) {
 	opts.FTPSFTPMode = cfg.FTPSFTPMode
 	opts.FTPKeyFile = cfg.FTPKeyFile
 	opts.FTPHostKeyFile = cfg.FTPHostKeyFile
+	opts.TTL = time.Duration(cfg.TTL) * time.Second
+	opts.TUI = cfg.TUI
 
 	// Default upload folder to webroot if not set in config
 	if opts.UploadFolder == "" {
@@ -238,6 +243,8 @@ func PrintExample() (string, error) {
 		FTPSFTPMode:         false,
 		FTPKeyFile:          "",
 		FTPHostKeyFile:      "",
+		TTL:                 0,
+		TUI:                 false,
 	}
 
 	b, err := json.MarshalIndent(defaultConfig, "", "  ")
