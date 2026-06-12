@@ -57,6 +57,13 @@ func (fs *FileServer) handleInfo(w http.ResponseWriter) {
 			"ldap-jndi-enabled": fmt.Sprintf("%t", fs.Options.LDAPJNDIEnabled),
 			"ldap-jndi-base":    fs.Options.LDAPJNDIBase,
 			"ldap-wordlist":     fs.Options.LDAPWordlist,
+			"ttl":               fmt.Sprintf("%d", fs.Options.TTL),
+			"tui":               fmt.Sprintf("%t", fs.Options.TUI),
+			"ftp":               fmt.Sprintf("%t", fs.Options.FTP),
+			"ftp-port":          fmt.Sprintf("%d", fs.Options.FTPPort),
+			"ftp-sftp-mode":     fmt.Sprintf("%t", fs.Options.FTPSFTPMode),
+			"ftp-key-file":      fs.Options.FTPKeyFile,
+			"ftp-host-key-file": fs.Options.FTPHostKeyFile,
 		}
 
 		err := json.NewEncoder(w).Encode(info)
