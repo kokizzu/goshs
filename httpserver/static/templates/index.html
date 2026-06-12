@@ -881,8 +881,12 @@
                                     stroke-width="2"
                                 >
                                     <ellipse cx="12" cy="5" rx="9" ry="3" />
-                                    <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
-                                    <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
+                                    <path
+                                        d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"
+                                    />
+                                    <path
+                                        d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"
+                                    />
                                 </svg>
                                 LDAP log
                                 <span class="cbadge" id="ldap-badge">0</span>
@@ -1151,7 +1155,13 @@
                                         oninput="renderSMTP()"
                                     />
                                 </div>
-                                <div style="margin-left: auto; display: flex; gap: 6px;">
+                                <div
+                                    style="
+                                        margin-left: auto;
+                                        display: flex;
+                                        gap: 6px;
+                                    "
+                                >
                                     <button
                                         class="btn btn-sm"
                                         onclick="exportSMTP()"
@@ -1205,7 +1215,13 @@
                                         oninput="renderSMB()"
                                     />
                                 </div>
-                                <div style="margin-left: auto; display: flex; gap: 6px;">
+                                <div
+                                    style="
+                                        margin-left: auto;
+                                        display: flex;
+                                        gap: 6px;
+                                    "
+                                >
                                     <button
                                         class="btn btn-sm"
                                         onclick="exportSMB()"
@@ -1260,7 +1276,13 @@
                                         oninput="renderLDAP()"
                                     />
                                 </div>
-                                <div style="margin-left: auto; display: flex; gap: 6px;">
+                                <div
+                                    style="
+                                        margin-left: auto;
+                                        display: flex;
+                                        gap: 6px;
+                                    "
+                                >
                                     <button
                                         class="btn btn-sm"
                                         onclick="exportLDAP()"
@@ -1284,8 +1306,12 @@
                                         stroke-width="1.5"
                                     >
                                         <ellipse cx="12" cy="5" rx="9" ry="3" />
-                                        <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
-                                        <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
+                                        <path
+                                            d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"
+                                        />
+                                        <path
+                                            d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"
+                                        />
                                     </svg>
                                     <p>No LDAP events yet.</p>
                                 </div>
@@ -1864,7 +1890,13 @@
                                 </div>
                             </div>
                             <div class="gen-credit">
-                                Payload templates inspired by <a href="https://revshells.com" target="_blank" rel="noopener">revshells.com</a>
+                                Payload templates inspired by
+                                <a
+                                    href="https://revshells.com"
+                                    target="_blank"
+                                    rel="noopener"
+                                    >revshells.com</a
+                                >
                             </div>
                         </div>
                     </div>
@@ -2075,7 +2107,10 @@
             <div class="modal" style="max-width: 900px; max-height: 90vh">
                 <div class="modal-header">
                     <span class="modal-title" id="md-title"></span>
-                    <button class="modal-close" onclick="closeModal('md-modal')">
+                    <button
+                        class="modal-close"
+                        onclick="closeModal('md-modal')"
+                    >
                         ✕
                     </button>
                 </div>
@@ -2115,15 +2150,15 @@
                     <line x1="12" y1="15" x2="12" y2="3" /></svg
                 >Download
             </div>
-            <div class="ctx-item" id="ctx-preview" style="display:none">
+            <div class="ctx-item" id="ctx-preview" style="display: none">
                 <svg
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
                     stroke-width="2"
                 >
-                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                    <circle cx="12" cy="12" r="3"/></svg
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                    <circle cx="12" cy="12" r="3" /></svg
                 >Preview
             </div>
             <div class="ctx-item" id="ctx-share">
@@ -2262,41 +2297,5 @@
         <script src="/js/xterm-addon-fit.min.js?static"></script>
         <script src="/js/xterm-addon-attach.min.js?static"></script>
         {{end}}
-        <script>
-            // Self-destruct countdown: render the remaining time until the
-            // server-side --ttl deadline (passed as Unix ms) and tick it down.
-            (function () {
-                var meta = document.querySelector('meta[name="ttl-deadline"]');
-                var deadline = meta ? parseInt(meta.content, 10) : 0;
-                var label = document.getElementById("ttl-remaining");
-                var box = document.getElementById("ttl-indicator");
-                if (!deadline || !label || !box) return;
-                function fmt(sec) {
-                    if (sec < 0) sec = 0;
-                    var d = Math.floor(sec / 86400);
-                    var h = Math.floor((sec % 86400) / 3600);
-                    var m = Math.floor((sec % 3600) / 60);
-                    var s = sec % 60;
-                    var p = function (n) {
-                        return (n < 10 ? "0" : "") + n;
-                    };
-                    if (d > 0) return d + "d " + p(h) + ":" + p(m) + ":" + p(s);
-                    if (h > 0) return p(h) + ":" + p(m) + ":" + p(s);
-                    return p(m) + ":" + p(s);
-                }
-                function tick() {
-                    var remaining = Math.round((deadline - Date.now()) / 1000);
-                    label.textContent = fmt(remaining);
-                    // Warn visually under a minute left.
-                    box.classList.toggle("ttl-expiring", remaining <= 60);
-                    if (remaining <= 0) {
-                        label.textContent = "00:00";
-                        clearInterval(timer);
-                    }
-                }
-                tick();
-                var timer = setInterval(tick, 1000);
-            })();
-        </script>
     </body>
 </html>
