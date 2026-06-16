@@ -20,6 +20,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"goshs.de/goshs/v2/catcher"
+	"goshs.de/goshs/v2/clipboard"
 	"goshs.de/goshs/v2/goshsversion"
 	"goshs.de/goshs/v2/options"
 	"goshs.de/goshs/v2/ws"
@@ -34,11 +35,11 @@ const maxRows = 500
 // Ctrl+C) or the self-destruct timer fires on ttlC. It subscribes to the hub
 // for the duration and unsubscribes on exit. The caller is responsible for
 // shutting the servers down afterwards. ttlC may be nil when --ttl is unset.
-func Run(opts *options.Options, hub *ws.Hub, mgr *catcher.Manager, tunnelURL func() string, ttlC <-chan time.Time) error {
+func Run(opts *options.Options, hub *ws.Hub, mgr *catcher.Manager, clip *clipboard.Clipboard, tunnelURL func() string, ttlC <-chan time.Time) error {
 	sub := hub.Subscribe()
 	defer hub.Unsubscribe(sub)
 
-	m := newModel(opts, hub, mgr, sub, tunnelURL, ttlC)
+	m := newModel(opts, hub, mgr, sub, clip, tunnelURL, ttlC)
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	_, err := p.Run()
 	return err
@@ -110,12 +111,14 @@ const (
 	paneLDAP
 	paneSMTP
 	paneShells
+	paneClipboard
 )
 
 type model struct {
 	opts *options.Options
 	hub  *ws.Hub
 	mgr  *catcher.Manager
+	clip *clipboard.Clipboard
 	sub  chan []byte
 
 	tunnelURL func() string    // live public tunnel URL getter; nil when unavailable
@@ -131,9 +134,12 @@ type model struct {
 
 	flash       string    // transient status message (e.g. export result)
 	flashExpiry time.Time // when the flash message should clear
+
+	inputActive bool   // clipboard "add entry" input mode is open
+	inputBuf    string // text typed so far in input mode
 }
 
-func newModel(opts *options.Options, hub *ws.Hub, mgr *catcher.Manager, sub chan []byte, tunnelURL func() string, ttlC <-chan time.Time) *model {
+func newModel(opts *options.Options, hub *ws.Hub, mgr *catcher.Manager, sub chan []byte, clip *clipboard.Clipboard, tunnelURL func() string, ttlC <-chan time.Time) *model {
 	var deadline time.Time
 	if opts.TTL > 0 {
 		deadline = time.Now().Add(opts.TTL)
@@ -142,6 +148,7 @@ func newModel(opts *options.Options, hub *ws.Hub, mgr *catcher.Manager, sub chan
 		opts:      opts,
 		hub:       hub,
 		mgr:       mgr,
+		clip:      clip,
 		sub:       sub,
 		tunnelURL: tunnelURL,
 		ttl:       ttlC,
@@ -153,6 +160,7 @@ func newModel(opts *options.Options, hub *ws.Hub, mgr *catcher.Manager, sub chan
 			{name: "LDAP", icon: "📇"},
 			{name: "SMTP", icon: "📨"},
 			{name: "SHELLS", icon: "🐚"},
+			{name: "CLIPBOARD", icon: "📋"},
 		},
 	}
 }
@@ -184,6 +192,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tickMsg:
 		m.refreshShells()
+		m.refreshClipboard()
 		if !m.flashExpiry.IsZero() && time.Now().After(m.flashExpiry) {
 			m.flash = ""
 			m.flashExpiry = time.Time{}
@@ -194,6 +203,11 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// While typing a new clipboard entry, keys feed the input buffer instead of
+	// driving navigation.
+	if m.inputActive {
+		return m.handleInputKey(msg)
+	}
 	switch msg.String() {
 	case "q", "ctrl+c":
 		return m, tea.Quit
@@ -242,6 +256,23 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "E":
 		// Export all panes to goshs-all-logs.json.
 		m.exportAll()
+	case "a":
+		// Add a clipboard entry (clipboard pane only).
+		if m.active == paneClipboard && m.clip != nil {
+			m.inputActive = true
+			m.inputBuf = ""
+			m.detail = false
+		}
+	case "d":
+		// Delete the selected clipboard entry (clipboard pane only).
+		if m.active == paneClipboard {
+			return m, m.deleteClipboardEntry()
+		}
+	case "C":
+		// Clear the whole clipboard (clipboard pane only).
+		if m.active == paneClipboard {
+			return m, m.clearClipboard()
+		}
 	case "enter":
 		p := m.panes[m.active]
 		if len(p.rows) > 0 {
@@ -309,6 +340,10 @@ func (m *model) ingest(raw []byte) {
 		m.addSMB(raw)
 	case "ldap":
 		m.addLDAP(raw)
+	case "refreshClipboard":
+		// A web client (or our own mutation) changed the shared clipboard;
+		// rebuild the pane immediately rather than waiting for the next tick.
+		m.refreshClipboard()
 	}
 	// catcherConnection events are intentionally ignored here: the SHELLS pane
 	// is rebuilt from the catcher manager on every tick, which reflects both
@@ -526,6 +561,119 @@ func (m *model) refreshShells() {
 	}
 }
 
+// --- clipboard --------------------------------------------------------------
+
+// refreshClipboard rebuilds the CLIPBOARD pane from the shared clipboard so it
+// reflects entries added from the web UI as well as the TUI. Entries are kept
+// newest-first (the clipboard prepends), matching the other panes.
+func (m *model) refreshClipboard() {
+	if m.clip == nil {
+		return
+	}
+	p := m.panes[paneClipboard]
+	prevSel := p.sel
+	entries, _ := m.clip.GetEntries()
+	p.rows = p.rows[:0]
+	for _, e := range entries {
+		summary := fmt.Sprintf("%s  %s", e.Time, oneLine(e.Content))
+		detail := fmt.Sprintf("Time: %s\n\n%s\n", e.Time, e.Content)
+		raw, _ := json.Marshal(e)
+		p.rows = append(p.rows, eventRow{summary: summary, detail: detail, accent: lipgloss.Color(nord7), raw: raw})
+	}
+	if prevSel < len(p.rows) {
+		p.sel = prevSel
+	} else if len(p.rows) > 0 {
+		p.sel = len(p.rows) - 1
+	} else {
+		p.sel = 0
+	}
+}
+
+// handleInputKey feeds keystrokes into the clipboard "add entry" buffer.
+func (m *model) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEnter:
+		text := strings.TrimSpace(m.inputBuf)
+		m.inputActive, m.inputBuf = false, ""
+		if text == "" || m.clip == nil {
+			return m, nil
+		}
+		if err := m.clip.AddEntry(text); err != nil {
+			m.setFlash("clipboard add failed: " + err.Error())
+			return m, nil
+		}
+		m.refreshClipboard()
+		m.setFlash("added clipboard entry")
+		return m, m.broadcastClipboard()
+	case tea.KeyEsc:
+		m.inputActive, m.inputBuf = false, ""
+	case tea.KeyBackspace, tea.KeyDelete:
+		if r := []rune(m.inputBuf); len(r) > 0 {
+			m.inputBuf = string(r[:len(r)-1])
+		}
+	case tea.KeySpace:
+		m.inputBuf += " "
+	case tea.KeyRunes:
+		m.inputBuf += string(msg.Runes)
+	}
+	return m, nil
+}
+
+// deleteClipboardEntry removes the selected clipboard entry and tells web
+// clients to re-fetch.
+func (m *model) deleteClipboardEntry() tea.Cmd {
+	if m.clip == nil {
+		return nil
+	}
+	p := m.panes[paneClipboard]
+	if len(p.rows) == 0 {
+		return nil
+	}
+	// GetEntries and the pane share the same newest-first order, so the
+	// selection index maps directly to the clipboard slice position.
+	if err := m.clip.DeleteEntry(p.sel); err != nil {
+		m.setFlash("clipboard delete failed: " + err.Error())
+		return nil
+	}
+	m.refreshClipboard()
+	m.setFlash("deleted clipboard entry")
+	return m.broadcastClipboard()
+}
+
+// clearClipboard empties the shared clipboard and tells web clients to
+// re-fetch.
+func (m *model) clearClipboard() tea.Cmd {
+	if m.clip == nil {
+		return nil
+	}
+	if err := m.clip.ClearClipboard(); err != nil {
+		m.setFlash("clipboard clear failed: " + err.Error())
+		return nil
+	}
+	m.refreshClipboard()
+	m.setFlash("cleared clipboard")
+	return m.broadcastClipboard()
+}
+
+// broadcastClipboard notifies web clients (and our own subscription) that the
+// shared clipboard changed so they re-fetch it. The send runs in a command so
+// it never blocks the UI loop on the unbuffered Broadcast channel.
+func (m *model) broadcastClipboard() tea.Cmd {
+	if m.hub == nil {
+		return nil
+	}
+	msg, err := json.Marshal(struct {
+		Type string `json:"type"`
+	}{"refreshClipboard"})
+	if err != nil {
+		return nil
+	}
+	return func() tea.Msg {
+		m.hub.Broadcast <- msg
+		return nil
+	}
+}
+
 // --- export -----------------------------------------------------------------
 
 // exportPane writes a single pane's events to goshs-<proto>-log.json — a bare
@@ -634,6 +782,7 @@ const (
 	nord3  = "#4C566A" // muted / dim
 	nord4  = "#D8DEE9" // snow storm (foreground)
 	nord6  = "#ECEFF4" // brightest foreground
+	nord7  = "#8FBCBB" // frost (clipboard)
 	nord8  = "#88C0D0" // frost (primary accent)
 	nord9  = "#81A1C1" // frost (3xx / ldap)
 	nord11 = "#BF616A" // aurora red (errors / shells)
@@ -654,6 +803,7 @@ var (
 	statusStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color(nord4)).Background(lipgloss.Color(nord1))
 	controlsStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(nord6)).Background(lipgloss.Color(nord3))
 	flashStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(nord0)).Background(lipgloss.Color(nord14))
+	inputStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(nord0)).Background(lipgloss.Color(nord13))
 	scrollThumb   = lipgloss.NewStyle().Foreground(lipgloss.Color(nord8))
 	scrollTrack   = lipgloss.NewStyle().Foreground(lipgloss.Color(nord3))
 )
@@ -726,10 +876,14 @@ func (m *model) tabs() string {
 // a context-sensitive controls line, both filling the terminal width.
 func (m *model) statusBar() string {
 	info := statusStyle.Width(m.width).Render(strings.Join(m.statusSegments(), "   "))
-	// A flash message (e.g. an export result) temporarily takes over the
-	// controls line so the operator sees the outcome without leaving the view.
+	// The controls line is taken over by the add-entry prompt while typing, or
+	// by a transient flash (e.g. an export result), so the operator sees the
+	// current mode/outcome without leaving the view.
 	line, style := m.controlsHint(), controlsStyle
-	if m.flash != "" {
+	switch {
+	case m.inputActive:
+		line, style = "add entry (enter save · esc cancel): "+m.inputBuf+"▌", inputStyle
+	case m.flash != "":
 		line, style = m.flash, flashStyle
 	}
 	controls := style.Width(m.width).Render(trunc(line, m.width))
@@ -828,6 +982,9 @@ func (m *model) tunnel() string {
 func (m *model) controlsHint() string {
 	if m.detail {
 		return "↑↓ event · PgUp/PgDn scroll · g/G newest/oldest · e/E export · esc close · q quit"
+	}
+	if m.active == paneClipboard {
+		return "⇄ Tab/←→ panes · ↑↓ scroll · ⏎ view · a add · d delete · C clear · e export · q quit"
 	}
 	return "⇄ Tab/←→ panes · ↑↓ scroll · ⏎ detail · g/G top/bottom · e/E export · q quit"
 }
@@ -1027,6 +1184,14 @@ func host(addr string) string {
 		return addr[:i]
 	}
 	return addr
+}
+
+// oneLine collapses newlines and tabs to spaces so multi-line content (e.g. a
+// clipboard entry) fits on a single summary row.
+func oneLine(s string) string {
+	return strings.Join(strings.FieldsFunc(s, func(r rune) bool {
+		return r == '\n' || r == '\r' || r == '\t'
+	}), " ")
 }
 
 func shortID(id string) string {

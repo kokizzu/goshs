@@ -30,6 +30,9 @@ type Servers struct {
 	// connected (or when --tunnel is unset). It is a getter rather than a value
 	// because the URL is assigned asynchronously once the tunnel comes up.
 	TunnelURL func() string
+	// Clipboard is the shared paste-bin so the TUI can read and mutate the same
+	// clipboard the web UI uses.
+	Clipboard *clipboard.Clipboard
 }
 
 func StartAll(opts *options.Options) *Servers {
@@ -107,6 +110,7 @@ func StartAll(opts *options.Options) *Servers {
 		Hub:       hub,
 		Catcher:   httpSrv.CatcherMgr,
 		TunnelURL: func() string { return httpSrv.TunnelURL },
+		Clipboard: clip,
 	}
 }
 

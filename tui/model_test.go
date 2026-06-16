@@ -8,8 +8,10 @@ import (
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"goshs.de/goshs/v2/clipboard"
 	"goshs.de/goshs/v2/options"
 )
 
@@ -80,7 +82,7 @@ func TestAddRowAnchorsSelectionInDetailView(t *testing.T) {
 // be exactly m.height lines in both the list and detail views so the status
 // bar stays pinned to the bottom of the screen regardless of event volume.
 func TestViewFillsHeight(t *testing.T) {
-	m := newModel(&options.Options{IP: "0.0.0.0", Port: 8000, Webroot: "/srv", DNS: true, DNSPort: 8053, SMB: true, SMBPort: 445}, nil, nil, nil, nil, nil)
+	m := newModel(&options.Options{IP: "0.0.0.0", Port: 8000, Webroot: "/srv", DNS: true, DNSPort: 8053, SMB: true, SMBPort: 445}, nil, nil, nil, nil, nil, nil)
 	m.width, m.height = 100, 30
 	for i := 0; i < 50; i++ {
 		m.addRow(paneHTTP, row(fmt.Sprintf("event %d", i)))
@@ -100,7 +102,7 @@ func TestViewFillsHeight(t *testing.T) {
 // TestDetailScrollClamps verifies the detail scroll offset is bounded to the
 // content during render, so paging past the end cannot strand the operator.
 func TestDetailScrollClamps(t *testing.T) {
-	m := newModel(&options.Options{Webroot: "/srv"}, nil, nil, nil, nil, nil)
+	m := newModel(&options.Options{Webroot: "/srv"}, nil, nil, nil, nil, nil, nil)
 	m.width, m.height = 80, 24
 	m.addRow(paneHTTP, eventRow{summary: "x", detail: strings.Repeat("line\n", 100)})
 	m.active = paneHTTP
@@ -122,7 +124,7 @@ func TestDetailScrollClamps(t *testing.T) {
 // bar once available, and shows a connecting placeholder until then.
 func TestStatusBarTunnelURL(t *testing.T) {
 	url := ""
-	m := newModel(&options.Options{Webroot: "/srv", Tunnel: true}, nil, nil, nil, func() string { return url }, nil)
+	m := newModel(&options.Options{Webroot: "/srv", Tunnel: true}, nil, nil, nil, nil, func() string { return url }, nil)
 
 	if seg := strings.Join(m.statusSegments(), " "); !strings.Contains(seg, "tunnel (connecting)") {
 		t.Fatalf("expected connecting placeholder before URL is up, got: %q", seg)
@@ -144,7 +146,7 @@ func TestExportPaneJSON(t *testing.T) {
 	}
 	defer os.Chdir(cwd)
 
-	m := newModel(&options.Options{Webroot: dir}, nil, nil, nil, nil, nil)
+	m := newModel(&options.Options{Webroot: dir}, nil, nil, nil, nil, nil, nil)
 	m.addHTTP([]byte(`{"type":"http","source":"10.0.0.5:5000","method":"GET","status":200,"url":"/secret"}`))
 
 	m.exportPane(paneHTTP)
@@ -176,7 +178,7 @@ func TestExportAllJSON(t *testing.T) {
 	}
 	defer os.Chdir(cwd)
 
-	m := newModel(&options.Options{Webroot: dir}, nil, nil, nil, nil, nil)
+	m := newModel(&options.Options{Webroot: dir}, nil, nil, nil, nil, nil, nil)
 	m.addHTTP([]byte(`{"type":"http","source":"10.0.0.5:5000","method":"GET","status":200,"url":"/a"}`))
 	m.addDNS([]byte(`{"type":"dns","name":"evil.example","qtype":"A","source":"10.0.0.6:5300"}`))
 
@@ -215,7 +217,7 @@ func TestExportEmptyPane(t *testing.T) {
 	}
 	defer os.Chdir(cwd)
 
-	m := newModel(&options.Options{Webroot: dir}, nil, nil, nil, nil, nil)
+	m := newModel(&options.Options{Webroot: dir}, nil, nil, nil, nil, nil, nil)
 	m.exportPane(paneDNS)
 
 	if m.flash != "nothing to export" {
@@ -223,5 +225,76 @@ func TestExportEmptyPane(t *testing.T) {
 	}
 	if matches, _ := filepath.Glob(filepath.Join(dir, "*.json")); len(matches) != 0 {
 		t.Fatalf("expected no file written, found %v", matches)
+	}
+}
+
+// TestClipboardRefreshNewestFirst verifies the CLIPBOARD pane mirrors the
+// shared clipboard with the newest entry on top.
+func TestClipboardRefreshNewestFirst(t *testing.T) {
+	cb := clipboard.New()
+	_ = cb.AddEntry("first")
+	_ = cb.AddEntry("second")
+
+	m := newModel(&options.Options{}, nil, nil, nil, cb, nil, nil)
+	m.refreshClipboard()
+
+	p := m.panes[paneClipboard]
+	if len(p.rows) != 2 {
+		t.Fatalf("want 2 clipboard rows, got %d", len(p.rows))
+	}
+	if !strings.Contains(p.rows[0].summary, "second") {
+		t.Fatalf("newest entry should be row 0, got %q", p.rows[0].summary)
+	}
+}
+
+// TestClipboardAddViaInput drives the add-entry input mode and checks the entry
+// reaches the shared clipboard and the pane.
+func TestClipboardAddViaInput(t *testing.T) {
+	cb := clipboard.New()
+	m := newModel(&options.Options{}, nil, nil, nil, cb, nil, nil)
+	m.active = paneClipboard
+	m.inputActive = true
+
+	m.handleInputKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("hello")})
+	m.handleInputKey(tea.KeyMsg{Type: tea.KeySpace})
+	m.handleInputKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("world")})
+	if m.inputBuf != "hello world" {
+		t.Fatalf("inputBuf = %q, want %q", m.inputBuf, "hello world")
+	}
+
+	m.handleInputKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.inputActive {
+		t.Fatal("input mode should close on enter")
+	}
+	entries, _ := cb.GetEntries()
+	if len(entries) != 1 || entries[0].Content != "hello world" {
+		t.Fatalf("clipboard not updated as expected: %+v", entries)
+	}
+	if !strings.Contains(m.panes[paneClipboard].rows[0].summary, "hello world") {
+		t.Fatalf("clipboard pane not refreshed: %q", m.panes[paneClipboard].rows[0].summary)
+	}
+}
+
+// TestClipboardDeleteAndClear verifies delete-selected and clear-all act on the
+// shared clipboard.
+func TestClipboardDeleteAndClear(t *testing.T) {
+	cb := clipboard.New()
+	_ = cb.AddEntry("a")
+	_ = cb.AddEntry("b")
+
+	m := newModel(&options.Options{}, nil, nil, nil, cb, nil, nil)
+	m.active = paneClipboard
+	m.refreshClipboard()
+
+	m.panes[paneClipboard].sel = 0 // newest ("b")
+	m.deleteClipboardEntry()
+	entries, _ := cb.GetEntries()
+	if len(entries) != 1 || entries[0].Content != "a" {
+		t.Fatalf("delete-selected wrong result: %+v", entries)
+	}
+
+	m.clearClipboard()
+	if entries, _ := cb.GetEntries(); len(entries) != 0 {
+		t.Fatalf("clear failed, %d entries left", len(entries))
 	}
 }
