@@ -10,9 +10,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,6 +25,7 @@ import (
 	"goshs.de/goshs/v2/clipboard"
 	"goshs.de/goshs/v2/goshsversion"
 	"goshs.de/goshs/v2/options"
+	"goshs.de/goshs/v2/smtpattach"
 	"goshs.de/goshs/v2/ws"
 )
 
@@ -135,8 +138,10 @@ type model struct {
 	flash       string    // transient status message (e.g. export result)
 	flashExpiry time.Time // when the flash message should clear
 
-	inputActive bool   // clipboard "add entry" input mode is open
-	inputBuf    string // text typed so far in input mode
+	inputActive bool                 // single-line text input mode is open
+	inputBuf    string               // text typed so far in input mode
+	inputPrompt string               // label shown in the status bar while typing
+	inputSubmit func(string) tea.Cmd // invoked with the trimmed buffer on enter
 }
 
 func newModel(opts *options.Options, hub *ws.Hub, mgr *catcher.Manager, sub chan []byte, clip *clipboard.Clipboard, tunnelURL func() string, ttlC <-chan time.Time) *model {
@@ -257,21 +262,39 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Export all panes to goshs-all-logs.json.
 		m.exportAll()
 	case "a":
-		// Add a clipboard entry (clipboard pane only).
-		if m.active == paneClipboard && m.clip != nil {
-			m.inputActive = true
-			m.inputBuf = ""
-			m.detail = false
+		// Clipboard: add an entry. Shells: start a listener. Both open the
+		// single-line input prompt.
+		switch m.active {
+		case paneClipboard:
+			if m.clip != nil {
+				m.beginInput("add entry", func(text string) tea.Cmd { return m.addClipboardEntry(text) })
+			}
+		case paneShells:
+			if m.mgr != nil {
+				m.beginInput("start listener (ip:port or port)", func(text string) tea.Cmd {
+					m.startListener(text)
+					return nil
+				})
+			}
 		}
 	case "d":
-		// Delete the selected clipboard entry (clipboard pane only).
-		if m.active == paneClipboard {
+		// Clipboard: delete the selected entry. Shells: stop the selected
+		// listener.
+		switch m.active {
+		case paneClipboard:
 			return m, m.deleteClipboardEntry()
+		case paneShells:
+			m.stopSelectedListener()
 		}
 	case "C":
 		// Clear the whole clipboard (clipboard pane only).
 		if m.active == paneClipboard {
 			return m, m.clearClipboard()
+		}
+	case "s":
+		// Save the selected mail's attachments to disk (SMTP pane only).
+		if m.active == paneSMTP {
+			m.saveSMTPAttachments()
 		}
 	case "enter":
 		p := m.panes[m.active]
@@ -455,10 +478,79 @@ func (m *model) addSMTP(raw []byte) {
 	for _, a := range e.Attachments {
 		fmt.Fprintf(&b, "Attach:  %s (%s, %d bytes)\n", a.Filename, a.ContentType, a.Size)
 	}
-	if e.Body != "" {
+	if len(e.Attachments) > 0 {
+		b.WriteString("         (press s to save attachments to disk)\n")
+	}
+	// Prefer the plaintext part; fall back to rendering the HTML body as text so
+	// HTML-only mail is no longer blank in the TUI.
+	switch {
+	case e.Body != "":
 		fmt.Fprintf(&b, "\n%s\n", e.Body)
+	case e.HTMLBody != "":
+		fmt.Fprintf(&b, "\n[rendered from HTML]\n%s\n", htmlToText(e.HTMLBody))
 	}
 	m.addRow(paneSMTP, eventRow{summary: summary, detail: b.String(), accent: lipgloss.Color(nord13), raw: raw})
+}
+
+// saveSMTPAttachments writes the selected mail's attachments to a
+// goshs-attachments directory under the working dir, pulling the bytes from the
+// in-process attachment store. Attachments may have been purged on a
+// long-running instance, in which case they are skipped.
+func (m *model) saveSMTPAttachments() {
+	p := m.panes[paneSMTP]
+	if len(p.rows) == 0 {
+		return
+	}
+	var e ws.SMTPEvent
+	if json.Unmarshal(p.rows[p.sel].raw, &e) != nil {
+		m.setFlash("could not read selected mail")
+		return
+	}
+	if len(e.Attachments) == 0 {
+		m.setFlash("no attachments on this mail")
+		return
+	}
+
+	dir, err := os.Getwd()
+	if err != nil {
+		dir = "."
+	}
+	dir = filepath.Join(dir, "goshs-attachments")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		m.setFlash("save failed: " + err.Error())
+		return
+	}
+
+	saved := 0
+	for _, att := range e.Attachments {
+		a, ok := smtpattach.Get(att.ID)
+		if !ok {
+			continue // expired or purged from the store
+		}
+		// Prefix with a short ID so attachments sharing a filename (or matching
+		// an existing file in the directory) cannot clobber one another.
+		name := fmt.Sprintf("%s-%s", shortID(att.ID), safeFilename(att.Filename))
+		if err := os.WriteFile(filepath.Join(dir, name), a.Data, 0o644); err != nil {
+			m.setFlash("save failed: " + err.Error())
+			return
+		}
+		saved++
+	}
+	if saved == 0 {
+		m.setFlash("attachments expired — nothing saved")
+		return
+	}
+	m.setFlash(fmt.Sprintf("saved %d attachment(s) → %s", saved, dir))
+}
+
+// safeFilename reduces an attachment filename to a single safe path component
+// so a malicious name cannot escape the target directory.
+func safeFilename(name string) string {
+	name = filepath.Base(strings.TrimSpace(name))
+	if name == "" || name == "." || name == ".." || name == string(filepath.Separator) {
+		return "attachment"
+	}
+	return name
 }
 
 func (m *model) addSMB(raw []byte) {
@@ -525,8 +617,9 @@ func (m *model) addLDAP(raw []byte) {
 	m.addRow(paneLDAP, eventRow{summary: summary, detail: b.String(), accent: lipgloss.Color(nord9), raw: raw})
 }
 
-// refreshShells rebuilds the SHELLS pane from the catcher manager so it
-// reflects the live set of active reverse-shell sessions.
+// refreshShells rebuilds the SHELLS pane from the catcher manager. Each row is
+// a listener (so idle listeners with no connections are still visible and
+// selectable for stopping); the detail view lists that listener's sessions.
 func (m *model) refreshShells() {
 	if m.mgr == nil {
 		return
@@ -535,21 +628,19 @@ func (m *model) refreshShells() {
 	prevSel := p.sel
 	p.rows = p.rows[:0]
 	for _, ln := range m.mgr.GetListeners() {
-		for _, s := range ln.Sessions {
-			summary := fmt.Sprintf("listener %s:%d  session %s  %s",
-				ln.IP, ln.Port, shortID(s.ID), s.RemoteAddr)
-			detail := fmt.Sprintf("Listener:   %s:%d (%s)\nSession:    %s\nRemoteAddr: %s\n",
-				ln.IP, ln.Port, ln.ID, s.ID, s.RemoteAddr)
-			raw, _ := json.Marshal(struct {
-				Type       string `json:"type"`
-				Listener   string `json:"listener"`
-				IP         string `json:"ip"`
-				Port       int    `json:"port"`
-				SessionID  string `json:"sessionId"`
-				RemoteAddr string `json:"remoteAddr"`
-			}{"shell", ln.ID, ln.IP, ln.Port, s.ID, s.RemoteAddr})
-			p.add(eventRow{summary: summary, detail: detail, accent: lipgloss.Color(nord11), raw: raw})
+		accent := lipgloss.Color(nord8) // listening, idle
+		if len(ln.Sessions) > 0 {
+			accent = lipgloss.Color(nord14) // has live sessions
 		}
+		summary := fmt.Sprintf("%-21s  %d session(s)", fmt.Sprintf("%s:%d", ln.IP, ln.Port), len(ln.Sessions))
+
+		var d strings.Builder
+		fmt.Fprintf(&d, "Listener: %s:%d\nID:       %s\nSessions: %d\n", ln.IP, ln.Port, ln.ID, len(ln.Sessions))
+		for _, s := range ln.Sessions {
+			fmt.Fprintf(&d, "  • %s  (session %s)\n", s.RemoteAddr, shortID(s.ID))
+		}
+		raw, _ := json.Marshal(ln)
+		p.rows = append(p.rows, eventRow{summary: summary, detail: d.String(), accent: accent, raw: raw})
 	}
 	sort.SliceStable(p.rows, func(i, j int) bool { return p.rows[i].summary < p.rows[j].summary })
 	if prevSel < len(p.rows) {
@@ -559,6 +650,77 @@ func (m *model) refreshShells() {
 	} else {
 		p.sel = 0
 	}
+}
+
+// --- listeners --------------------------------------------------------------
+
+// startListener parses "ip:port" or a bare "port" and starts a catcher
+// listener, reporting the outcome via a flash message.
+func (m *model) startListener(addr string) {
+	if m.mgr == nil {
+		return
+	}
+	ip, port, err := parseListenerAddr(addr)
+	if err != nil {
+		m.setFlash("invalid address: " + err.Error())
+		return
+	}
+	info, err := m.mgr.StartListener(ip, port)
+	if err != nil {
+		m.setFlash("start listener failed: " + err.Error())
+		return
+	}
+	m.refreshShells()
+	m.setFlash(fmt.Sprintf("listener started on %s:%d", info.IP, info.Port))
+}
+
+// stopSelectedListener stops the listener under the selection in the SHELLS
+// pane (identified by the ListenerInfo stored on the row).
+func (m *model) stopSelectedListener() {
+	if m.mgr == nil {
+		return
+	}
+	p := m.panes[paneShells]
+	if len(p.rows) == 0 {
+		m.setFlash("no listener selected")
+		return
+	}
+	var info catcher.ListenerInfo
+	if json.Unmarshal(p.rows[p.sel].raw, &info) != nil || info.ID == "" {
+		m.setFlash("could not identify listener")
+		return
+	}
+	if err := m.mgr.StopListener(info.ID); err != nil {
+		m.setFlash("stop listener failed: " + err.Error())
+		return
+	}
+	m.refreshShells()
+	m.setFlash(fmt.Sprintf("stopped listener %s:%d", info.IP, info.Port))
+}
+
+// parseListenerAddr accepts "ip:port" or a bare "port" and returns the bind IP
+// (defaulting to 0.0.0.0) and port.
+func parseListenerAddr(s string) (string, int, error) {
+	s = strings.TrimSpace(s)
+	ip, portStr := "0.0.0.0", s
+	if strings.Contains(s, ":") {
+		host, p, err := net.SplitHostPort(s)
+		if err != nil {
+			return "", 0, err
+		}
+		if host != "" {
+			ip = host
+		}
+		portStr = p
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return "", 0, fmt.Errorf("port must be a number")
+	}
+	if port < 1 || port > 65535 {
+		return "", 0, fmt.Errorf("port out of range")
+	}
+	return ip, port, nil
 }
 
 // --- clipboard --------------------------------------------------------------
@@ -589,24 +751,30 @@ func (m *model) refreshClipboard() {
 	}
 }
 
-// handleInputKey feeds keystrokes into the clipboard "add entry" buffer.
+// beginInput opens the single-line text prompt with a label and a submit
+// callback run (with the trimmed buffer) when the operator presses enter.
+func (m *model) beginInput(prompt string, submit func(string) tea.Cmd) {
+	m.inputActive = true
+	m.inputBuf = ""
+	m.inputPrompt = prompt
+	m.inputSubmit = submit
+	m.detail = false
+}
+
+// handleInputKey feeds keystrokes into the active text input and dispatches its
+// submit callback on enter.
 func (m *model) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyEnter:
 		text := strings.TrimSpace(m.inputBuf)
-		m.inputActive, m.inputBuf = false, ""
-		if text == "" || m.clip == nil {
+		submit := m.inputSubmit
+		m.inputActive, m.inputBuf, m.inputPrompt, m.inputSubmit = false, "", "", nil
+		if text == "" || submit == nil {
 			return m, nil
 		}
-		if err := m.clip.AddEntry(text); err != nil {
-			m.setFlash("clipboard add failed: " + err.Error())
-			return m, nil
-		}
-		m.refreshClipboard()
-		m.setFlash("added clipboard entry")
-		return m, m.broadcastClipboard()
+		return m, submit(text)
 	case tea.KeyEsc:
-		m.inputActive, m.inputBuf = false, ""
+		m.inputActive, m.inputBuf, m.inputPrompt, m.inputSubmit = false, "", "", nil
 	case tea.KeyBackspace, tea.KeyDelete:
 		if r := []rune(m.inputBuf); len(r) > 0 {
 			m.inputBuf = string(r[:len(r)-1])
@@ -617,6 +785,21 @@ func (m *model) handleInputKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.inputBuf += string(msg.Runes)
 	}
 	return m, nil
+}
+
+// addClipboardEntry stores a new shared-clipboard entry and tells web clients
+// to re-fetch.
+func (m *model) addClipboardEntry(text string) tea.Cmd {
+	if m.clip == nil {
+		return nil
+	}
+	if err := m.clip.AddEntry(text); err != nil {
+		m.setFlash("clipboard add failed: " + err.Error())
+		return nil
+	}
+	m.refreshClipboard()
+	m.setFlash("added clipboard entry")
+	return m.broadcastClipboard()
 }
 
 // deleteClipboardEntry removes the selected clipboard entry and tells web
@@ -882,7 +1065,7 @@ func (m *model) statusBar() string {
 	line, style := m.controlsHint(), controlsStyle
 	switch {
 	case m.inputActive:
-		line, style = "add entry (enter save · esc cancel): "+m.inputBuf+"▌", inputStyle
+		line, style = m.inputPrompt+" (enter save · esc cancel): "+m.inputBuf+"▌", inputStyle
 	case m.flash != "":
 		line, style = m.flash, flashStyle
 	}
@@ -981,10 +1164,21 @@ func (m *model) tunnel() string {
 
 func (m *model) controlsHint() string {
 	if m.detail {
+		switch m.active {
+		case paneSMTP:
+			return "↑↓ event · PgUp/PgDn scroll · s save attachments · e/E export · esc close · q quit"
+		case paneShells:
+			return "↑↓ listener · a start · d stop · e export · esc close · q quit"
+		}
 		return "↑↓ event · PgUp/PgDn scroll · g/G newest/oldest · e/E export · esc close · q quit"
 	}
-	if m.active == paneClipboard {
+	switch m.active {
+	case paneClipboard:
 		return "⇄ Tab/←→ panes · ↑↓ scroll · ⏎ view · a add · d delete · C clear · e export · q quit"
+	case paneShells:
+		return "⇄ Tab/←→ panes · ↑↓ scroll · ⏎ sessions · a start listener · d stop listener · e export · q quit"
+	case paneSMTP:
+		return "⇄ Tab/←→ panes · ↑↓ scroll · ⏎ detail · s save attachments · e/E export · q quit"
 	}
 	return "⇄ Tab/←→ panes · ↑↓ scroll · ⏎ detail · g/G top/bottom · e/E export · q quit"
 }

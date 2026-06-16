@@ -74,3 +74,49 @@ func TestFormatHeaderPlain(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+func TestHTMLToText(t *testing.T) {
+	in := `<html><head><style>p{color:red}</style><title>x</title></head>
+		<body><h1>Hi there</h1><p>Click <a href="http://evil">here</a> now</p>
+		<script>alert(1)</script></body></html>`
+	out := htmlToText(in)
+	for _, want := range []string{"Hi there", "Click", "here", "now"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("htmlToText dropped %q; got:\n%s", want, out)
+		}
+	}
+	for _, bad := range []string{"color:red", "alert(1)", "<", ">"} {
+		if strings.Contains(out, bad) {
+			t.Fatalf("htmlToText leaked %q; got:\n%s", bad, out)
+		}
+	}
+	// Block elements should introduce line breaks (heading separate from body).
+	if !strings.Contains(out, "Hi there\n") {
+		t.Fatalf("expected a line break after the heading; got:\n%s", out)
+	}
+}
+
+func TestHTMLToTextPlainPassthrough(t *testing.T) {
+	// No tags: content survives, whitespace is tidied.
+	if got := htmlToText("just  plain   text"); got != "just plain text" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestHTMLToTextLink(t *testing.T) {
+	out := htmlToText(`<p>Click <a href="http://evil.example/login">here</a></p>`)
+	if !strings.Contains(out, "here") || !strings.Contains(out, "(http://evil.example/login)") {
+		t.Fatalf("link text and href should both appear; got:\n%s", out)
+	}
+	// In-page anchors are noise and should be dropped.
+	if got := htmlToText(`<a href="#top">top</a>`); strings.Contains(got, "(#top)") {
+		t.Fatalf("in-page anchor href should be omitted; got:\n%s", got)
+	}
+}
+
+func TestHTMLToTextImage(t *testing.T) {
+	out := htmlToText(`<img src="http://track.example/p.gif" alt="logo">`)
+	if !strings.Contains(out, "[image:") || !strings.Contains(out, "http://track.example/p.gif") || !strings.Contains(out, "logo") {
+		t.Fatalf("image src and alt should appear; got:\n%s", out)
+	}
+}

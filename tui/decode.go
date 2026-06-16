@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"golang.org/x/net/html"
 )
 
 // This file is the Go counterpart of the smart content decoder in
@@ -323,4 +325,100 @@ func inlineOrIndent(s, indent string) string {
 		lines[i] = indent + lines[i]
 	}
 	return "\n" + strings.Join(lines, "\n")
+}
+
+// htmlToText renders an HTML email body as readable plain text so HTML-only
+// mail is legible in the TUI (which cannot render real HTML). Script/style/head
+// content is dropped, block-level elements introduce line breaks, and runs of
+// whitespace and blank lines are collapsed. Links keep their href and images
+// are surfaced as "[image: src]" so the operator can see where a phishing mail
+// actually points. On a parse error the original string is returned unchanged.
+func htmlToText(s string) string {
+	doc, err := html.Parse(strings.NewReader(s))
+	if err != nil {
+		return s
+	}
+	var b strings.Builder
+	var walk func(*html.Node)
+	walk = func(n *html.Node) {
+		if n.Type == html.ElementNode {
+			switch n.Data {
+			case "script", "style", "head", "title", "meta", "link", "noscript":
+				return
+			case "img":
+				// Void element: surface the source (and alt text) inline.
+				writeImage(&b, htmlAttr(n, "src"), htmlAttr(n, "alt"))
+				return
+			}
+		}
+		if n.Type == html.TextNode {
+			if t := strings.TrimSpace(n.Data); t != "" {
+				b.WriteString(t)
+				b.WriteByte(' ')
+			}
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			walk(c)
+		}
+		if n.Type == html.ElementNode {
+			// Append the link target after the link text so it survives as plain
+			// text, e.g. "click here (http://evil.example)".
+			if n.Data == "a" {
+				if href := strings.TrimSpace(htmlAttr(n, "href")); href != "" && !strings.HasPrefix(href, "#") {
+					b.WriteString("(" + href + ") ")
+				}
+			}
+			switch n.Data {
+			case "p", "br", "div", "tr", "li", "table", "ul", "ol",
+				"h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "hr":
+				b.WriteByte('\n')
+			}
+		}
+	}
+	walk(doc)
+	return collapseBlankLines(b.String())
+}
+
+// htmlAttr returns the value of the named attribute on n, or "".
+func htmlAttr(n *html.Node, key string) string {
+	for _, a := range n.Attr {
+		if a.Key == key {
+			return a.Val
+		}
+	}
+	return ""
+}
+
+// writeImage renders an <img> as readable text, including the alt text when the
+// source is also present.
+func writeImage(b *strings.Builder, src, alt string) {
+	src, alt = strings.TrimSpace(src), strings.TrimSpace(alt)
+	switch {
+	case src != "" && alt != "":
+		b.WriteString("[image: " + alt + " (" + src + ")] ")
+	case src != "":
+		b.WriteString("[image: " + src + "] ")
+	case alt != "":
+		b.WriteString("[image: " + alt + "] ")
+	}
+}
+
+// collapseBlankLines trims each line, collapses internal whitespace runs to a
+// single space, and squeezes consecutive blank lines into one.
+func collapseBlankLines(s string) string {
+	var out []string
+	blank := false
+	for _, ln := range strings.Split(s, "\n") {
+		ln = strings.Join(strings.Fields(ln), " ")
+		if ln == "" {
+			if blank {
+				continue
+			}
+			blank = true
+		} else {
+			blank = false
+		}
+		out = append(out, ln)
+	}
+	return strings.TrimSpace(strings.Join(out, "\n"))
 }

@@ -3,6 +3,7 @@ package tui
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,8 +12,10 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"goshs.de/goshs/v2/catcher"
 	"goshs.de/goshs/v2/clipboard"
 	"goshs.de/goshs/v2/options"
+	"goshs.de/goshs/v2/smtpattach"
 )
 
 // newTestModel builds a minimal model with empty panes for unit testing the
@@ -253,7 +256,12 @@ func TestClipboardAddViaInput(t *testing.T) {
 	cb := clipboard.New()
 	m := newModel(&options.Options{}, nil, nil, nil, cb, nil, nil)
 	m.active = paneClipboard
-	m.inputActive = true
+
+	// "a" opens the input prompt with the clipboard-add submit callback wired.
+	m.handleKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")})
+	if !m.inputActive {
+		t.Fatal("expected input mode to open on 'a'")
+	}
 
 	m.handleInputKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("hello")})
 	m.handleInputKey(tea.KeyMsg{Type: tea.KeySpace})
@@ -296,5 +304,117 @@ func TestClipboardDeleteAndClear(t *testing.T) {
 	m.clearClipboard()
 	if entries, _ := cb.GetEntries(); len(entries) != 0 {
 		t.Fatalf("clear failed, %d entries left", len(entries))
+	}
+}
+
+func TestParseListenerAddr(t *testing.T) {
+	cases := []struct {
+		in      string
+		ip      string
+		port    int
+		wantErr bool
+	}{
+		{"4444", "0.0.0.0", 4444, false},
+		{"127.0.0.1:9001", "127.0.0.1", 9001, false},
+		{":8080", "0.0.0.0", 8080, false},
+		{"notaport", "", 0, true},
+		{"1.2.3.4:99999", "", 0, true},
+		{"1.2.3.4:0", "", 0, true},
+	}
+	for _, c := range cases {
+		ip, port, err := parseListenerAddr(c.in)
+		if c.wantErr {
+			if err == nil {
+				t.Fatalf("%q: expected error, got %s:%d", c.in, ip, port)
+			}
+			continue
+		}
+		if err != nil || ip != c.ip || port != c.port {
+			t.Fatalf("%q: got %s:%d err=%v, want %s:%d", c.in, ip, port, err, c.ip, c.port)
+		}
+	}
+}
+
+// TestStartStopListener drives the SHELLS pane's start/stop actions against a
+// real catcher manager and verifies the listener appears and disappears.
+func TestStartStopListener(t *testing.T) {
+	// Grab a free port so the bind cannot collide with anything in CI.
+	probe, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("probe listen: %v", err)
+	}
+	port := probe.Addr().(*net.TCPAddr).Port
+	probe.Close()
+
+	mgr := catcher.NewManager(nil)
+	m := newModel(&options.Options{}, nil, mgr, nil, nil, nil, nil)
+	m.active = paneShells
+
+	m.startListener(fmt.Sprintf("127.0.0.1:%d", port))
+	if got := len(mgr.GetListeners()); got != 1 {
+		t.Fatalf("expected 1 listener after start, got %d (flash: %q)", got, m.flash)
+	}
+	m.refreshShells()
+	if len(m.panes[paneShells].rows) != 1 {
+		t.Fatalf("SHELLS pane should show the listener row")
+	}
+
+	m.panes[paneShells].sel = 0
+	m.stopSelectedListener()
+	if got := len(mgr.GetListeners()); got != 0 {
+		t.Fatalf("expected 0 listeners after stop, got %d", got)
+	}
+	if !strings.HasPrefix(m.flash, "stopped listener") {
+		t.Fatalf("unexpected flash: %q", m.flash)
+	}
+}
+
+// TestSaveSMTPAttachments verifies the selected mail's attachments are pulled
+// from the in-process store and written to goshs-attachments in the working dir.
+func TestSaveSMTPAttachments(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	defer os.Chdir(cwd)
+
+	smtpattach.Save("att-test-1", "report.pdf", "application/pdf", []byte("PDFDATA"))
+
+	m := newModel(&options.Options{}, nil, nil, nil, nil, nil, nil)
+	m.addSMTP([]byte(`{"type":"smtp","from":"a@b.c","subject":"hi","attachments":[{"id":"att-test-1","filename":"report.pdf","contentType":"application/pdf","size":7}]}`))
+	m.active = paneSMTP
+	m.panes[paneSMTP].sel = 0
+
+	m.saveSMTPAttachments()
+	if !strings.HasPrefix(m.flash, "saved 1 attachment") {
+		t.Fatalf("unexpected flash: %q", m.flash)
+	}
+	matches, _ := filepath.Glob(filepath.Join(dir, "goshs-attachments", "*report.pdf"))
+	if len(matches) != 1 {
+		t.Fatalf("expected one saved attachment, found %d", len(matches))
+	}
+	if data, _ := os.ReadFile(matches[0]); string(data) != "PDFDATA" {
+		t.Fatalf("attachment content = %q, want PDFDATA", data)
+	}
+}
+
+// TestSaveSMTPAttachmentsNone reports cleanly when the selected mail has no
+// attachments.
+func TestSaveSMTPAttachmentsNone(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	defer os.Chdir(cwd)
+
+	m := newModel(&options.Options{}, nil, nil, nil, nil, nil, nil)
+	m.addSMTP([]byte(`{"type":"smtp","from":"a@b.c","subject":"hi"}`))
+	m.active = paneSMTP
+
+	m.saveSMTPAttachments()
+	if m.flash != "no attachments on this mail" {
+		t.Fatalf("unexpected flash: %q", m.flash)
 	}
 }
