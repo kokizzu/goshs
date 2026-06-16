@@ -1,6 +1,14 @@
 package tui
 
-import "testing"
+import (
+	"fmt"
+	"strings"
+	"testing"
+
+	"github.com/charmbracelet/lipgloss"
+
+	"goshs.de/goshs/v2/options"
+)
 
 // newTestModel builds a minimal model with empty panes for unit testing the
 // ingest/selection logic without a running bubbletea program.
@@ -62,5 +70,47 @@ func TestAddRowAnchorsSelectionInDetailView(t *testing.T) {
 	m.addRow(paneHTTP, row("c"))
 	if p.rows[p.sel].summary != want {
 		t.Fatalf("detail view swapped events: got %q, want %q", p.rows[p.sel].summary, want)
+	}
+}
+
+// TestViewFillsHeight guards the fixed-height layout: the rendered frame must
+// be exactly m.height lines in both the list and detail views so the status
+// bar stays pinned to the bottom of the screen regardless of event volume.
+func TestViewFillsHeight(t *testing.T) {
+	m := newModel(&options.Options{IP: "0.0.0.0", Port: 8000, Webroot: "/srv", DNS: true, DNSPort: 8053, SMB: true, SMBPort: 445}, nil, nil, nil, nil)
+	m.width, m.height = 100, 30
+	for i := 0; i < 50; i++ {
+		m.addRow(paneHTTP, row(fmt.Sprintf("event %d", i)))
+	}
+	m.active = paneHTTP
+
+	if got := lipgloss.Height(m.View()); got != m.height {
+		t.Fatalf("list view height = %d, want %d", got, m.height)
+	}
+
+	m.detail = true
+	if got := lipgloss.Height(m.View()); got != m.height {
+		t.Fatalf("detail view height = %d, want %d", got, m.height)
+	}
+}
+
+// TestDetailScrollClamps verifies the detail scroll offset is bounded to the
+// content during render, so paging past the end cannot strand the operator.
+func TestDetailScrollClamps(t *testing.T) {
+	m := newModel(&options.Options{Webroot: "/srv"}, nil, nil, nil, nil)
+	m.width, m.height = 80, 24
+	m.addRow(paneHTTP, eventRow{summary: "x", detail: strings.Repeat("line\n", 100)})
+	m.active = paneHTTP
+	m.detail = true
+
+	p := m.panes[paneHTTP]
+	p.detailTop = 9999
+	_ = m.View()
+
+	if p.detailTop == 9999 {
+		t.Fatalf("detailTop was not clamped to the content")
+	}
+	if m.detailH <= 0 {
+		t.Fatalf("detailH not recorded for paging: %d", m.detailH)
 	}
 }

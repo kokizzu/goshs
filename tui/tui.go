@@ -17,6 +17,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"goshs.de/goshs/v2/catcher"
+	"goshs.de/goshs/v2/goshsversion"
 	"goshs.de/goshs/v2/options"
 	"goshs.de/goshs/v2/ws"
 )
@@ -80,10 +81,12 @@ type eventRow struct {
 }
 
 type pane struct {
-	name string
-	rows []eventRow
-	sel  int
-	top  int
+	name      string
+	icon      string
+	rows      []eventRow
+	sel       int
+	top       int
+	detailTop int // scroll offset within the open detail body
 }
 
 // add inserts a new event at the top of the pane so the newest event is
@@ -119,6 +122,7 @@ type model struct {
 	height   int
 	deadline time.Time // zero when no --ttl set
 	detail   bool      // detail view of the selected row is open
+	detailH  int       // last rendered detail viewport height (for paging)
 }
 
 func newModel(opts *options.Options, hub *ws.Hub, mgr *catcher.Manager, sub chan []byte, ttlC <-chan time.Time) *model {
@@ -134,12 +138,12 @@ func newModel(opts *options.Options, hub *ws.Hub, mgr *catcher.Manager, sub chan
 		ttl:      ttlC,
 		deadline: deadline,
 		panes: []*pane{
-			{name: "HTTP"},
-			{name: "DNS"},
-			{name: "SMB"},
-			{name: "LDAP"},
-			{name: "SMTP"},
-			{name: "SHELLS"},
+			{name: "HTTP", icon: "🌐"},
+			{name: "DNS", icon: "📡"},
+			{name: "SMB", icon: "🔑"},
+			{name: "LDAP", icon: "📇"},
+			{name: "SMTP", icon: "✉️"},
+			{name: "SHELLS", icon: "🐚"},
 		},
 	}
 }
@@ -190,21 +194,54 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		p := m.panes[m.active]
 		if p.sel > 0 {
 			p.sel--
+			p.detailTop = 0
 		}
 	case "down", "j":
 		p := m.panes[m.active]
 		if p.sel < len(p.rows)-1 {
 			p.sel++
+			p.detailTop = 0
 		}
+	case "home", "g":
+		// Jump to the newest event (row 0). In detail view this surfaces any
+		// events that arrived while the operator was reading an older one.
+		p := m.panes[m.active]
+		p.sel = 0
+		p.detailTop = 0
+	case "end", "G":
+		p := m.panes[m.active]
+		if len(p.rows) > 0 {
+			p.sel = len(p.rows) - 1
+			p.detailTop = 0
+		}
+	case "pgup", "ctrl+u":
+		// Scroll the open detail body up; the view clamps the offset.
+		p := m.panes[m.active]
+		p.detailTop -= m.detailStep()
+		if p.detailTop < 0 {
+			p.detailTop = 0
+		}
+	case "pgdown", "ctrl+d", " ":
+		m.panes[m.active].detailTop += m.detailStep()
 	case "enter":
 		p := m.panes[m.active]
 		if len(p.rows) > 0 {
 			m.detail = !m.detail
+			p.detailTop = 0
 		}
 	case "esc":
 		m.detail = false
 	}
 	return m, nil
+}
+
+// detailStep is how many lines pgup/pgdown scroll the detail body by — close
+// to a full page based on the last rendered detail height.
+func (m *model) detailStep() int {
+	if m.detailH > 1 {
+		return m.detailH - 1
+	}
+	return 10
 }
 
 // --- ingest -----------------------------------------------------------------
@@ -292,11 +329,11 @@ func (m *model) addHTTP(raw []byte) {
 	if json.Unmarshal(raw, &e) != nil {
 		return
 	}
-	accent := lipgloss.Color("2") // green
+	accent := lipgloss.Color(nord14) // green: 2xx
 	if e.Status >= 400 {
-		accent = lipgloss.Color("1") // red
+		accent = lipgloss.Color(nord11) // red: 4xx/5xx
 	} else if e.Status >= 300 {
-		accent = lipgloss.Color("4") // blue
+		accent = lipgloss.Color(nord9) // blue: 3xx
 	}
 	summary := fmt.Sprintf("%s  %-15s %-6s %-3d %s",
 		tstamp(e.Timestamp), host(e.Source), e.Method, e.Status, e.URL)
@@ -339,7 +376,7 @@ func (m *model) addDNS(raw []byte) {
 	summary := fmt.Sprintf("%s  %-15s %-5s %s", tstamp(e.Time), host(e.Source), e.QType, e.Name)
 	detail := fmt.Sprintf("Time:   %s\nSource: %s\nType:   %s\nName:   %s\n",
 		e.Time.Format(time.RFC3339), e.Source, e.QType, e.Name)
-	m.addRow(paneDNS, eventRow{summary: summary, detail: detail, accent: lipgloss.Color("6")})
+	m.addRow(paneDNS, eventRow{summary: summary, detail: detail, accent: lipgloss.Color(nord8)})
 }
 
 func (m *model) addSMTP(raw []byte) {
@@ -367,7 +404,7 @@ func (m *model) addSMTP(raw []byte) {
 	if e.Body != "" {
 		fmt.Fprintf(&b, "\n%s\n", e.Body)
 	}
-	m.addRow(paneSMTP, eventRow{summary: summary, detail: b.String(), accent: lipgloss.Color("3")})
+	m.addRow(paneSMTP, eventRow{summary: summary, detail: b.String(), accent: lipgloss.Color(nord13)})
 }
 
 func (m *model) addSMB(raw []byte) {
@@ -395,7 +432,7 @@ func (m *model) addSMB(raw []byte) {
 		fmt.Fprintf(&b, "Cracked:     %s\n", e.CrackedPassword)
 	}
 	fmt.Fprintf(&b, "\nHash:\n%s\n", e.Hash)
-	m.addRow(paneSMB, eventRow{summary: summary, detail: b.String(), accent: lipgloss.Color("5")})
+	m.addRow(paneSMB, eventRow{summary: summary, detail: b.String(), accent: lipgloss.Color(nord15)})
 }
 
 func (m *model) addLDAP(raw []byte) {
@@ -431,7 +468,7 @@ func (m *model) addLDAP(raw []byte) {
 			fmt.Fprintf(&b, "Password:  %s\n", e.Password)
 		}
 	}
-	m.addRow(paneLDAP, eventRow{summary: summary, detail: b.String(), accent: lipgloss.Color("5")})
+	m.addRow(paneLDAP, eventRow{summary: summary, detail: b.String(), accent: lipgloss.Color(nord9)})
 }
 
 // refreshShells rebuilds the SHELLS pane from the catcher manager so it
@@ -449,7 +486,7 @@ func (m *model) refreshShells() {
 				ln.IP, ln.Port, shortID(s.ID), s.RemoteAddr)
 			detail := fmt.Sprintf("Listener:   %s:%d (%s)\nSession:    %s\nRemoteAddr: %s\n",
 				ln.IP, ln.Port, ln.ID, s.ID, s.RemoteAddr)
-			p.add(eventRow{summary: summary, detail: detail, accent: lipgloss.Color("1")})
+			p.add(eventRow{summary: summary, detail: detail, accent: lipgloss.Color(nord11)})
 		}
 	}
 	sort.SliceStable(p.rows, func(i, j int) bool { return p.rows[i].summary < p.rows[j].summary })
@@ -464,76 +501,85 @@ func (m *model) refreshShells() {
 
 // --- view -------------------------------------------------------------------
 
-var (
-	headerStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("0")).Background(lipgloss.Color("6")).Padding(0, 1)
-	tabActive     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("0")).Background(lipgloss.Color("7")).Padding(0, 1)
-	tabInactive   = lipgloss.NewStyle().Foreground(lipgloss.Color("7")).Padding(0, 1)
-	footerStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("8"))
-	selectedStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("0")).Background(lipgloss.Color("7"))
+// Nord palette (https://www.nordtheme.com) — the same theme the web UI uses,
+// so the TUI and browser dashboards share a look.
+const (
+	nord0  = "#2E3440" // polar night (background)
+	nord1  = "#3B4252" // status-bar background
+	nord3  = "#4C566A" // muted / dim
+	nord4  = "#D8DEE9" // snow storm (foreground)
+	nord6  = "#ECEFF4" // brightest foreground
+	nord8  = "#88C0D0" // frost (primary accent)
+	nord9  = "#81A1C1" // frost (3xx / ldap)
+	nord11 = "#BF616A" // aurora red (errors / shells)
+	nord13 = "#EBCB8B" // aurora yellow (smtp)
+	nord14 = "#A3BE8C" // aurora green (2xx)
+	nord15 = "#B48EAD" // aurora purple (smb)
 )
 
+var (
+	bannerStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(nord8))
+	bannerSubtle  = lipgloss.NewStyle().Foreground(lipgloss.Color(nord3))
+	tabActive     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(nord0)).Background(lipgloss.Color(nord8)).Padding(0, 1)
+	tabInactive   = lipgloss.NewStyle().Foreground(lipgloss.Color(nord4)).Background(lipgloss.Color(nord1)).Padding(0, 1)
+	selectedStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(nord0)).Background(lipgloss.Color(nord8))
+	dimStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color(nord3))
+	titleStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(nord8))
+	statusStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color(nord4)).Background(lipgloss.Color(nord1))
+	controlsStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(nord6)).Background(lipgloss.Color(nord3))
+	scrollThumb   = lipgloss.NewStyle().Foreground(lipgloss.Color(nord8))
+	scrollTrack   = lipgloss.NewStyle().Foreground(lipgloss.Color(nord3))
+)
+
+// bannerArt is the goshs figlet logo, mirroring logger.PrintBanner so the
+// dashboard greets the operator with the same brand mark as the CLI.
+var bannerArt = []string{
+	`  __ _  ___  ___| |__  ___ `,
+	` / _` + "`" + ` |/ _ \/ __| '_ \/ __|`,
+	`| (_| | (_) \__ \ | | \__ \`,
+	` \__, |\___/|___/_| |_|___/`,
+	`  __/ |`,
+	` |___/`,
+}
+
 func (m *model) View() string {
-	if m.width == 0 {
+	if m.width == 0 || m.height == 0 {
 		return "starting goshs dashboard..."
 	}
+	banner := m.banner()
+	tabs := m.tabs()
+	status := m.statusBar()
+	chrome := lipgloss.Height(banner) + lipgloss.Height(tabs) + lipgloss.Height(status)
+	bodyH := m.height - chrome
+	if bodyH < 1 {
+		bodyH = 1
+	}
+	body := m.bodyView(bodyH)
+	return strings.Join([]string{banner, tabs, body, status}, "\n")
+}
+
+// banner renders the goshs logo at the top. On short terminals it collapses to
+// a single line so the event body keeps as much room as possible.
+func (m *model) banner() string {
+	if m.height < 18 || m.width < 30 {
+		return bannerStyle.Render("goshs ") + bannerSubtle.Render(goshsversion.GoshsVersion)
+	}
 	var b strings.Builder
-	b.WriteString(m.header())
-	b.WriteString("\n")
-	b.WriteString(m.tabs())
-	b.WriteString("\n")
-	b.WriteString(m.bodyView())
-	b.WriteString("\n")
-	b.WriteString(m.footer())
+	for i, ln := range bannerArt {
+		b.WriteString(bannerStyle.Render(ln))
+		if i == len(bannerArt)-1 {
+			b.WriteString(bannerSubtle.Render("   " + goshsversion.GoshsVersion))
+		} else {
+			b.WriteByte('\n')
+		}
+	}
 	return b.String()
-}
-
-func (m *model) header() string {
-	scheme := "http"
-	if m.opts.SSL {
-		scheme = "https"
-	}
-	auth := "off"
-	if m.opts.BasicAuth != "" || m.opts.CertAuth != "" {
-		auth = "on"
-	}
-	parts := []string{
-		fmt.Sprintf("goshs  %s://%s:%d", scheme, m.opts.IP, m.opts.Port),
-		"auth:" + auth,
-	}
-	if !m.deadline.IsZero() {
-		parts = append(parts, "ttl "+remaining(m.deadline))
-	}
-	for _, s := range collabBadges(m.opts) {
-		parts = append(parts, s)
-	}
-	line := strings.Join(parts, "  ·  ")
-	return headerStyle.Width(m.width).Render(trunc(line, m.width-2))
-}
-
-func collabBadges(o *options.Options) []string {
-	var out []string
-	if o.DNS {
-		out = append(out, "dns")
-	}
-	if o.SMTP {
-		out = append(out, "smtp")
-	}
-	if o.SMB {
-		out = append(out, "smb")
-	}
-	if o.LDAP {
-		out = append(out, "ldap")
-	}
-	if o.Catcher {
-		out = append(out, "catcher")
-	}
-	return out
 }
 
 func (m *model) tabs() string {
 	var cells []string
 	for i, p := range m.panes {
-		label := fmt.Sprintf("%s(%d)", p.name, len(p.rows))
+		label := fmt.Sprintf("%s %s(%d)", p.icon, p.name, len(p.rows))
 		if i == m.active {
 			cells = append(cells, tabActive.Render(label))
 		} else {
@@ -543,26 +589,109 @@ func (m *model) tabs() string {
 	return lipgloss.JoinHorizontal(lipgloss.Top, cells...)
 }
 
-// bodyHeight is the number of rows available between the header/tabs and the
-// footer (3 chrome lines above, 1 below).
-func (m *model) bodyHeight() int {
-	h := m.height - 4
-	if h < 1 {
-		return 1
-	}
-	return h
+// statusBar renders the bottom chrome: a wrapping info bar of server facts and
+// a context-sensitive controls line, both filling the terminal width.
+func (m *model) statusBar() string {
+	info := statusStyle.Width(m.width).Render(strings.Join(m.statusSegments(), "   "))
+	controls := controlsStyle.Width(m.width).Render(trunc(m.controlsHint(), m.width))
+	return info + "\n" + controls
 }
 
-func (m *model) bodyView() string {
-	p := m.panes[m.active]
-	if m.detail {
-		return m.detailView(p)
+// statusSegments collects the server facts shown in the status bar. Most come
+// straight from the parsed options; the live tunnel URL and shared-link count
+// live on the FileServer at runtime and are not surfaced here.
+func (m *model) statusSegments() []string {
+	o := m.opts
+	scheme := "http"
+	if o.SSL {
+		scheme = "https"
 	}
-	if len(p.rows) == 0 {
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Render("  (no events yet)")
+	var seg []string
+	add := func(s string) { seg = append(seg, s) }
+
+	add("🏷 " + goshsversion.GoshsVersion)
+	add(fmt.Sprintf("🔗 %s://%s:%d", scheme, o.IP, o.Port))
+	add("📁 " + o.Webroot)
+	if o.UploadFolder != "" && o.UploadFolder != o.Webroot {
+		add("📥 " + o.UploadFolder)
+	}
+	if !m.deadline.IsZero() {
+		add("⏳ ttl " + remaining(m.deadline))
 	}
 
-	h := m.bodyHeight()
+	if o.Username != "" {
+		add("🔒 auth " + o.Username)
+	} else if o.BasicAuth != "" || o.CertAuth != "" {
+		add("🔒 auth on")
+	}
+	if o.DropUser != "" {
+		add("👤 " + o.DropUser)
+	}
+
+	var flags []string
+	if o.ReadOnly {
+		flags = append(flags, "read-only")
+	}
+	if o.UploadOnly {
+		flags = append(flags, "upload-only")
+	}
+	if o.NoDelete {
+		flags = append(flags, "no-delete")
+	}
+	if len(flags) > 0 {
+		add("🚫 " + strings.Join(flags, ","))
+	}
+
+	if o.WebDav {
+		add(fmt.Sprintf("🗂 webdav :%d", o.WebDavPort))
+	}
+	if o.CLI {
+		add("⌨ cli")
+	}
+	if o.Tunnel {
+		add("🌍 tunnel")
+	}
+	if o.DNS {
+		add(fmt.Sprintf("📡 dns :%d", o.DNSPort))
+	}
+	if o.SMTP {
+		add(fmt.Sprintf("✉ smtp :%d", o.SMTPPort))
+	}
+	if o.SMB {
+		s := fmt.Sprintf("🔑 smb :%d", o.SMBPort)
+		if o.SMBDomain != "" || o.SMBShare != "" {
+			s += fmt.Sprintf(" %s\\%s", o.SMBDomain, o.SMBShare)
+		}
+		add(s)
+	}
+	if o.LDAP {
+		add(fmt.Sprintf("📇 ldap :%d", o.LDAPPort))
+	}
+	if o.Catcher {
+		add("🐚 catcher")
+	}
+	return seg
+}
+
+func (m *model) controlsHint() string {
+	if m.detail {
+		return "↑↓ event · PgUp/PgDn scroll · g/G newest/oldest · esc close · q quit"
+	}
+	return "⇄ Tab/←→ panes · ↑↓ scroll · ⏎ detail · g/G top/bottom · q quit"
+}
+
+// bodyView renders exactly h lines for the active pane so the status bar stays
+// pinned to the bottom of the screen. The list view gets a vertical scrollbar
+// in the rightmost column whenever the events overflow the viewport.
+func (m *model) bodyView(h int) string {
+	p := m.panes[m.active]
+	if m.detail {
+		return m.detailView(p, h)
+	}
+	if len(p.rows) == 0 {
+		return padLines([]string{dimStyle.Render("  (no events yet)")}, h)
+	}
+
 	// Keep the selected row within the visible window.
 	if p.sel < p.top {
 		p.top = p.sel
@@ -570,36 +699,147 @@ func (m *model) bodyView() string {
 	if p.sel >= p.top+h {
 		p.top = p.sel - h + 1
 	}
+	if p.top < 0 {
+		p.top = 0
+	}
 
-	var b strings.Builder
+	bar := scrollColumn(len(p.rows), p.top, h)
+	contentW := m.width
+	if bar != nil {
+		contentW = m.width - 1
+	}
+	if contentW < 1 {
+		contentW = 1
+	}
+
 	end := p.top + h
 	if end > len(p.rows) {
 		end = len(p.rows)
 	}
+	var lines []string
 	for i := p.top; i < end; i++ {
-		line := trunc(p.rows[i].summary, m.width-2)
+		line := trunc(p.rows[i].summary, contentW)
+		st := lipgloss.NewStyle().Foreground(p.rows[i].accent)
 		if i == p.sel {
-			b.WriteString(selectedStyle.Width(m.width).Render(line))
-		} else {
-			b.WriteString(lipgloss.NewStyle().Foreground(p.rows[i].accent).Render(line))
+			st = selectedStyle
 		}
-		if i < end-1 {
-			b.WriteString("\n")
+		lines = append(lines, st.Width(contentW).Render(line))
+	}
+	for len(lines) < h {
+		lines = append(lines, strings.Repeat(" ", contentW))
+	}
+	if bar != nil {
+		for i := range lines {
+			lines[i] += scrollCell(bar, i)
 		}
 	}
-	return b.String()
+	return strings.Join(lines, "\n")
 }
 
-func (m *model) detailView(p *pane) string {
-	if p.sel >= len(p.rows) {
-		return ""
+// scrollColumn returns a per-row mask marking where the scrollbar thumb sits,
+// or nil when all content fits (total <= viewH) and no bar is needed.
+func scrollColumn(total, top, viewH int) []bool {
+	if viewH <= 0 || total <= viewH {
+		return nil
 	}
-	title := lipgloss.NewStyle().Bold(true).Render(fmt.Sprintf("%s detail (esc/enter to close)", p.name))
-	width := m.width - 2
+	mask := make([]bool, viewH)
+	thumb := viewH * viewH / total
+	if thumb < 1 {
+		thumb = 1
+	}
+	pos := 0
+	if maxTop := total - viewH; maxTop > 0 {
+		pos = (viewH - thumb) * top / maxTop
+	}
+	for i := 0; i < thumb && pos+i < viewH; i++ {
+		mask[pos+i] = true
+	}
+	return mask
+}
+
+// scrollCell renders one cell of the scrollbar track for row i.
+func scrollCell(bar []bool, i int) string {
+	if i < len(bar) && bar[i] {
+		return scrollThumb.Render("█")
+	}
+	return scrollTrack.Render("│")
+}
+
+// padLines pads (or clips) a slice of rendered lines to exactly h lines and
+// joins them, so a section fills its reserved height.
+func padLines(lines []string, h int) string {
+	for len(lines) < h {
+		lines = append(lines, "")
+	}
+	if len(lines) > h {
+		lines = lines[:h]
+	}
+	return strings.Join(lines, "\n")
+}
+
+// padRight pads a plain (ANSI-free) string with spaces to w display columns.
+func padRight(s string, w int) string {
+	if n := len([]rune(s)); n < w {
+		return s + strings.Repeat(" ", w-n)
+	}
+	return s
+}
+
+// detailView renders the inspected event in exactly h lines: a title line
+// (with a position badge) plus a scrollable, hard-wrapped body. The badge
+// surfaces that newer events have arrived while the operator was reading this
+// one — rows are newest-first, so any row above the selection (index < p.sel)
+// is newer. The count ticks up live as traffic comes in even though the
+// inspected event stays anchored; ↑ (or home/g) jumps to them.
+func (m *model) detailView(p *pane, h int) string {
+	if p.sel >= len(p.rows) {
+		return padLines(nil, h)
+	}
+	badge := fmt.Sprintf("%d/%d", p.sel+1, len(p.rows))
+	if p.sel > 0 {
+		badge += fmt.Sprintf(" · ↑ %d newer", p.sel)
+	}
+	title := titleStyle.Render(fmt.Sprintf("%s %s detail  %s", p.icon, p.name, badge))
+
+	width := m.width - 1 // reserve the rightmost column for the scrollbar
 	if width < 1 {
 		width = 1
 	}
-	return title + "\n\n" + hardWrap(p.rows[p.sel].detail, width)
+	body := strings.Split(hardWrap(p.rows[p.sel].detail, width), "\n")
+
+	bodyH := h - 1 // title consumes one line
+	if bodyH < 1 {
+		bodyH = 1
+	}
+	m.detailH = bodyH
+
+	// Clamp the scroll offset to the content and write it back so the paging
+	// keys stay bounded across renders.
+	maxTop := len(body) - bodyH
+	if maxTop < 0 {
+		maxTop = 0
+	}
+	if p.detailTop > maxTop {
+		p.detailTop = maxTop
+	}
+	if p.detailTop < 0 {
+		p.detailTop = 0
+	}
+
+	bar := scrollColumn(len(body), p.detailTop, bodyH)
+	end := p.detailTop + bodyH
+	if end > len(body) {
+		end = len(body)
+	}
+	lines := []string{title}
+	for i := p.detailTop; i < end; i++ {
+		ln := body[i]
+		if bar != nil {
+			ln = padRight(ln, width) + scrollCell(bar, i-p.detailTop)
+		}
+		lines = append(lines, ln)
+	}
+	return padLines(lines, h)
 }
 
 // hardWrap re-flows a detail body so no rendered line exceeds width. Unlike
@@ -623,17 +863,12 @@ func hardWrap(s string, width int) string {
 	return out.String()
 }
 
-func (m *model) footer() string {
-	hint := "tab/←→ switch · ↑↓/jk scroll · enter detail · q quit"
-	return footerStyle.Width(m.width).Render(trunc(hint, m.width-1))
-}
-
 // --- helpers ----------------------------------------------------------------
 
 // tstamp formats an event time for the one-line summaries. It includes the
-// date as well as the time so that, on long-running instances, events from
-// previous days remain distinguishable at a glance.
-func tstamp(t time.Time) string { return t.Format("01-02 15:04:05") }
+// full date (year as well) plus the time so that, on long-running instances,
+// events from previous days or years remain distinguishable at a glance.
+func tstamp(t time.Time) string { return t.Format("2006-01-02 15:04:05") }
 
 func host(addr string) string {
 	if i := strings.LastIndex(addr, ":"); i > 0 {
@@ -661,11 +896,12 @@ func trunc(s string, n int) string {
 	if n <= 0 {
 		return ""
 	}
-	if len(s) <= n {
+	r := []rune(s)
+	if len(r) <= n {
 		return s
 	}
-	if n <= 1 {
-		return s[:n]
+	if n == 1 {
+		return string(r[:1])
 	}
-	return s[:n-1] + "…"
+	return string(r[:n-1]) + "…"
 }
