@@ -26,6 +26,10 @@ type Servers struct {
 	Shutdown func(context.Context)
 	Hub      *ws.Hub
 	Catcher  *catcher.Manager
+	// TunnelURL returns the live public tunnel URL, or "" until the tunnel has
+	// connected (or when --tunnel is unset). It is a getter rather than a value
+	// because the URL is assigned asynchronously once the tunnel comes up.
+	TunnelURL func() string
 }
 
 func StartAll(opts *options.Options) *Servers {
@@ -99,9 +103,10 @@ func StartAll(opts *options.Options) *Servers {
 	}
 
 	return &Servers{
-		Shutdown: shutdown,
-		Hub:      hub,
-		Catcher:  httpSrv.CatcherMgr,
+		Shutdown:  shutdown,
+		Hub:       hub,
+		Catcher:   httpSrv.CatcherMgr,
+		TunnelURL: func() string { return httpSrv.TunnelURL },
 	}
 }
 

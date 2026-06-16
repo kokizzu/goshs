@@ -83,7 +83,7 @@ func main() {
 		// The dashboard owns the terminal, so route logging away from the
 		// console for its lifetime to avoid corrupting the rendered view.
 		logger.LogFile(io.Discard)
-		if err := tui.Run(opts, srv.Hub, srv.Catcher, ttlC); err != nil {
+		if err := tui.Run(opts, srv.Hub, srv.Catcher, srv.TunnelURL, ttlC); err != nil {
 			logger.LogFile(os.Stderr)
 			logger.Errorf("dashboard error: %+v", err)
 		}

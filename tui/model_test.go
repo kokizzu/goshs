@@ -1,7 +1,10 @@
 package tui
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -77,7 +80,7 @@ func TestAddRowAnchorsSelectionInDetailView(t *testing.T) {
 // be exactly m.height lines in both the list and detail views so the status
 // bar stays pinned to the bottom of the screen regardless of event volume.
 func TestViewFillsHeight(t *testing.T) {
-	m := newModel(&options.Options{IP: "0.0.0.0", Port: 8000, Webroot: "/srv", DNS: true, DNSPort: 8053, SMB: true, SMBPort: 445}, nil, nil, nil, nil)
+	m := newModel(&options.Options{IP: "0.0.0.0", Port: 8000, Webroot: "/srv", DNS: true, DNSPort: 8053, SMB: true, SMBPort: 445}, nil, nil, nil, nil, nil)
 	m.width, m.height = 100, 30
 	for i := 0; i < 50; i++ {
 		m.addRow(paneHTTP, row(fmt.Sprintf("event %d", i)))
@@ -97,7 +100,7 @@ func TestViewFillsHeight(t *testing.T) {
 // TestDetailScrollClamps verifies the detail scroll offset is bounded to the
 // content during render, so paging past the end cannot strand the operator.
 func TestDetailScrollClamps(t *testing.T) {
-	m := newModel(&options.Options{Webroot: "/srv"}, nil, nil, nil, nil)
+	m := newModel(&options.Options{Webroot: "/srv"}, nil, nil, nil, nil, nil)
 	m.width, m.height = 80, 24
 	m.addRow(paneHTTP, eventRow{summary: "x", detail: strings.Repeat("line\n", 100)})
 	m.active = paneHTTP
@@ -112,5 +115,113 @@ func TestDetailScrollClamps(t *testing.T) {
 	}
 	if m.detailH <= 0 {
 		t.Fatalf("detailH not recorded for paging: %d", m.detailH)
+	}
+}
+
+// TestStatusBarTunnelURL verifies the live tunnel URL is surfaced in the status
+// bar once available, and shows a connecting placeholder until then.
+func TestStatusBarTunnelURL(t *testing.T) {
+	url := ""
+	m := newModel(&options.Options{Webroot: "/srv", Tunnel: true}, nil, nil, nil, func() string { return url }, nil)
+
+	if seg := strings.Join(m.statusSegments(), " "); !strings.Contains(seg, "tunnel (connecting)") {
+		t.Fatalf("expected connecting placeholder before URL is up, got: %q", seg)
+	}
+
+	url = "https://abc123.tunnel.example"
+	if seg := strings.Join(m.statusSegments(), " "); !strings.Contains(seg, url) {
+		t.Fatalf("expected live tunnel URL in status bar, got: %q", seg)
+	}
+}
+
+// TestExportPaneJSON verifies a per-pane export writes goshs-<proto>-log.json
+// as a bare JSON array of the raw events, matching the web UI's exportHTTP().
+func TestExportPaneJSON(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	defer os.Chdir(cwd)
+
+	m := newModel(&options.Options{Webroot: dir}, nil, nil, nil, nil, nil)
+	m.addHTTP([]byte(`{"type":"http","source":"10.0.0.5:5000","method":"GET","status":200,"url":"/secret"}`))
+
+	m.exportPane(paneHTTP)
+
+	if !strings.HasPrefix(m.flash, "exported 1 HTTP event(s)") {
+		t.Fatalf("unexpected flash after export: %q", m.flash)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, "goshs-http-log.json"))
+	if err != nil {
+		t.Fatalf("read export: %v", err)
+	}
+	var events []map[string]any
+	if err := json.Unmarshal(data, &events); err != nil {
+		t.Fatalf("export is not a JSON array: %v\n%s", err, data)
+	}
+	if len(events) != 1 || events[0]["url"] != "/secret" || events[0]["type"] != "http" {
+		t.Fatalf("unexpected export contents: %s", data)
+	}
+}
+
+// TestExportAllJSON verifies the combined export mirrors the web UI's
+// exportAllLogs() wrapper object: {generatedAt, http, dns, smtp, smb, ldap}.
+func TestExportAllJSON(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	defer os.Chdir(cwd)
+
+	m := newModel(&options.Options{Webroot: dir}, nil, nil, nil, nil, nil)
+	m.addHTTP([]byte(`{"type":"http","source":"10.0.0.5:5000","method":"GET","status":200,"url":"/a"}`))
+	m.addDNS([]byte(`{"type":"dns","name":"evil.example","qtype":"A","source":"10.0.0.6:5300"}`))
+
+	m.exportAll()
+
+	data, err := os.ReadFile(filepath.Join(dir, "goshs-all-logs.json"))
+	if err != nil {
+		t.Fatalf("read export: %v", err)
+	}
+	var all struct {
+		GeneratedAt string           `json:"generatedAt"`
+		HTTP        []map[string]any `json:"http"`
+		DNS         []map[string]any `json:"dns"`
+		SMTP        []map[string]any `json:"smtp"`
+		SMB         []map[string]any `json:"smb"`
+		LDAP        []map[string]any `json:"ldap"`
+	}
+	if err := json.Unmarshal(data, &all); err != nil {
+		t.Fatalf("export is not the expected object: %v\n%s", err, data)
+	}
+	if all.GeneratedAt == "" {
+		t.Fatalf("missing generatedAt; got:\n%s", data)
+	}
+	if len(all.HTTP) != 1 || len(all.DNS) != 1 {
+		t.Fatalf("expected 1 http + 1 dns event, got http=%d dns=%d", len(all.HTTP), len(all.DNS))
+	}
+}
+
+// TestExportEmptyPane verifies exporting a pane with no events writes nothing
+// and flashes a "nothing to export" notice instead.
+func TestExportEmptyPane(t *testing.T) {
+	dir := t.TempDir()
+	cwd, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	defer os.Chdir(cwd)
+
+	m := newModel(&options.Options{Webroot: dir}, nil, nil, nil, nil, nil)
+	m.exportPane(paneDNS)
+
+	if m.flash != "nothing to export" {
+		t.Fatalf("expected nothing-to-export flash, got %q", m.flash)
+	}
+	if matches, _ := filepath.Glob(filepath.Join(dir, "*.json")); len(matches) != 0 {
+		t.Fatalf("expected no file written, found %v", matches)
 	}
 }

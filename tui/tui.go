@@ -7,8 +7,11 @@
 package tui
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -31,11 +34,11 @@ const maxRows = 500
 // Ctrl+C) or the self-destruct timer fires on ttlC. It subscribes to the hub
 // for the duration and unsubscribes on exit. The caller is responsible for
 // shutting the servers down afterwards. ttlC may be nil when --ttl is unset.
-func Run(opts *options.Options, hub *ws.Hub, mgr *catcher.Manager, ttlC <-chan time.Time) error {
+func Run(opts *options.Options, hub *ws.Hub, mgr *catcher.Manager, tunnelURL func() string, ttlC <-chan time.Time) error {
 	sub := hub.Subscribe()
 	defer hub.Unsubscribe(sub)
 
-	m := newModel(opts, hub, mgr, sub, ttlC)
+	m := newModel(opts, hub, mgr, sub, tunnelURL, ttlC)
 	p := tea.NewProgram(m, tea.WithAltScreen())
 	_, err := p.Run()
 	return err
@@ -78,6 +81,7 @@ type eventRow struct {
 	summary string
 	detail  string
 	accent  lipgloss.Color
+	raw     json.RawMessage // original event JSON, for export parity with the web UI
 }
 
 type pane struct {
@@ -114,7 +118,8 @@ type model struct {
 	mgr  *catcher.Manager
 	sub  chan []byte
 
-	ttl <-chan time.Time // self-destruct trigger; nil when --ttl unset
+	tunnelURL func() string    // live public tunnel URL getter; nil when unavailable
+	ttl       <-chan time.Time // self-destruct trigger; nil when --ttl unset
 
 	panes    []*pane
 	active   int
@@ -123,26 +128,30 @@ type model struct {
 	deadline time.Time // zero when no --ttl set
 	detail   bool      // detail view of the selected row is open
 	detailH  int       // last rendered detail viewport height (for paging)
+
+	flash       string    // transient status message (e.g. export result)
+	flashExpiry time.Time // when the flash message should clear
 }
 
-func newModel(opts *options.Options, hub *ws.Hub, mgr *catcher.Manager, sub chan []byte, ttlC <-chan time.Time) *model {
+func newModel(opts *options.Options, hub *ws.Hub, mgr *catcher.Manager, sub chan []byte, tunnelURL func() string, ttlC <-chan time.Time) *model {
 	var deadline time.Time
 	if opts.TTL > 0 {
 		deadline = time.Now().Add(opts.TTL)
 	}
 	return &model{
-		opts:     opts,
-		hub:      hub,
-		mgr:      mgr,
-		sub:      sub,
-		ttl:      ttlC,
-		deadline: deadline,
+		opts:      opts,
+		hub:       hub,
+		mgr:       mgr,
+		sub:       sub,
+		tunnelURL: tunnelURL,
+		ttl:       ttlC,
+		deadline:  deadline,
 		panes: []*pane{
 			{name: "HTTP", icon: "🌐"},
 			{name: "DNS", icon: "📡"},
 			{name: "SMB", icon: "🔑"},
 			{name: "LDAP", icon: "📇"},
-			{name: "SMTP", icon: "✉️"},
+			{name: "SMTP", icon: "📨"},
 			{name: "SHELLS", icon: "🐚"},
 		},
 	}
@@ -175,6 +184,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tickMsg:
 		m.refreshShells()
+		if !m.flashExpiry.IsZero() && time.Now().After(m.flashExpiry) {
+			m.flash = ""
+			m.flashExpiry = time.Time{}
+		}
 		return m, tick()
 	}
 	return m, nil
@@ -223,6 +236,12 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "pgdown", "ctrl+d", " ":
 		m.panes[m.active].detailTop += m.detailStep()
+	case "e":
+		// Export the active pane to goshs-<proto>-log.json.
+		m.exportPane(m.active)
+	case "E":
+		// Export all panes to goshs-all-logs.json.
+		m.exportAll()
 	case "enter":
 		p := m.panes[m.active]
 		if len(p.rows) > 0 {
@@ -365,7 +384,7 @@ func (m *model) addHTTP(raw []byte) {
 			fmt.Fprintf(&b, "%s\n", e.Body)
 		}
 	}
-	m.addRow(paneHTTP, eventRow{summary: summary, detail: b.String(), accent: accent})
+	m.addRow(paneHTTP, eventRow{summary: summary, detail: b.String(), accent: accent, raw: raw})
 }
 
 func (m *model) addDNS(raw []byte) {
@@ -376,7 +395,7 @@ func (m *model) addDNS(raw []byte) {
 	summary := fmt.Sprintf("%s  %-15s %-5s %s", tstamp(e.Time), host(e.Source), e.QType, e.Name)
 	detail := fmt.Sprintf("Time:   %s\nSource: %s\nType:   %s\nName:   %s\n",
 		e.Time.Format(time.RFC3339), e.Source, e.QType, e.Name)
-	m.addRow(paneDNS, eventRow{summary: summary, detail: detail, accent: lipgloss.Color(nord8)})
+	m.addRow(paneDNS, eventRow{summary: summary, detail: detail, accent: lipgloss.Color(nord8), raw: raw})
 }
 
 func (m *model) addSMTP(raw []byte) {
@@ -404,7 +423,7 @@ func (m *model) addSMTP(raw []byte) {
 	if e.Body != "" {
 		fmt.Fprintf(&b, "\n%s\n", e.Body)
 	}
-	m.addRow(paneSMTP, eventRow{summary: summary, detail: b.String(), accent: lipgloss.Color(nord13)})
+	m.addRow(paneSMTP, eventRow{summary: summary, detail: b.String(), accent: lipgloss.Color(nord13), raw: raw})
 }
 
 func (m *model) addSMB(raw []byte) {
@@ -432,7 +451,7 @@ func (m *model) addSMB(raw []byte) {
 		fmt.Fprintf(&b, "Cracked:     %s\n", e.CrackedPassword)
 	}
 	fmt.Fprintf(&b, "\nHash:\n%s\n", e.Hash)
-	m.addRow(paneSMB, eventRow{summary: summary, detail: b.String(), accent: lipgloss.Color(nord15)})
+	m.addRow(paneSMB, eventRow{summary: summary, detail: b.String(), accent: lipgloss.Color(nord15), raw: raw})
 }
 
 func (m *model) addLDAP(raw []byte) {
@@ -468,7 +487,7 @@ func (m *model) addLDAP(raw []byte) {
 			fmt.Fprintf(&b, "Password:  %s\n", e.Password)
 		}
 	}
-	m.addRow(paneLDAP, eventRow{summary: summary, detail: b.String(), accent: lipgloss.Color(nord9)})
+	m.addRow(paneLDAP, eventRow{summary: summary, detail: b.String(), accent: lipgloss.Color(nord9), raw: raw})
 }
 
 // refreshShells rebuilds the SHELLS pane from the catcher manager so it
@@ -486,7 +505,15 @@ func (m *model) refreshShells() {
 				ln.IP, ln.Port, shortID(s.ID), s.RemoteAddr)
 			detail := fmt.Sprintf("Listener:   %s:%d (%s)\nSession:    %s\nRemoteAddr: %s\n",
 				ln.IP, ln.Port, ln.ID, s.ID, s.RemoteAddr)
-			p.add(eventRow{summary: summary, detail: detail, accent: lipgloss.Color(nord11)})
+			raw, _ := json.Marshal(struct {
+				Type       string `json:"type"`
+				Listener   string `json:"listener"`
+				IP         string `json:"ip"`
+				Port       int    `json:"port"`
+				SessionID  string `json:"sessionId"`
+				RemoteAddr string `json:"remoteAddr"`
+			}{"shell", ln.ID, ln.IP, ln.Port, s.ID, s.RemoteAddr})
+			p.add(eventRow{summary: summary, detail: detail, accent: lipgloss.Color(nord11), raw: raw})
 		}
 	}
 	sort.SliceStable(p.rows, func(i, j int) bool { return p.rows[i].summary < p.rows[j].summary })
@@ -497,6 +524,104 @@ func (m *model) refreshShells() {
 	} else {
 		p.sel = 0
 	}
+}
+
+// --- export -----------------------------------------------------------------
+
+// exportPane writes a single pane's events to goshs-<proto>-log.json — a bare
+// JSON array of the raw events, matching the web UI's per-tab export
+// (exportHTTP/exportDNS/… in collab.js).
+func (m *model) exportPane(idx int) {
+	p := m.panes[idx]
+	events := rawEvents(p)
+	if len(events) == 0 {
+		m.setFlash("nothing to export")
+		return
+	}
+	name := fmt.Sprintf("goshs-%s-log.json", strings.ToLower(p.name))
+	path, err := writeJSONExport(name, events)
+	if err != nil {
+		m.setFlash("export failed: " + err.Error())
+		return
+	}
+	m.setFlash(fmt.Sprintf("exported %d %s event(s) → %s", len(events), p.name, path))
+}
+
+// exportAll writes goshs-all-logs.json — the same wrapper object the web UI's
+// exportAllLogs() produces: {generatedAt, http, dns, smtp, smb, ldap}. As in
+// the web UI the SHELLS pane is not part of the combined export (use its
+// per-pane export for that).
+func (m *model) exportAll() {
+	all := struct {
+		GeneratedAt string            `json:"generatedAt"`
+		HTTP        []json.RawMessage `json:"http"`
+		DNS         []json.RawMessage `json:"dns"`
+		SMTP        []json.RawMessage `json:"smtp"`
+		SMB         []json.RawMessage `json:"smb"`
+		LDAP        []json.RawMessage `json:"ldap"`
+	}{
+		GeneratedAt: time.Now().Format(time.RFC3339),
+		HTTP:        rawEvents(m.panes[paneHTTP]),
+		DNS:         rawEvents(m.panes[paneDNS]),
+		SMTP:        rawEvents(m.panes[paneSMTP]),
+		SMB:         rawEvents(m.panes[paneSMB]),
+		LDAP:        rawEvents(m.panes[paneLDAP]),
+	}
+	total := len(all.HTTP) + len(all.DNS) + len(all.SMTP) + len(all.SMB) + len(all.LDAP)
+	if total == 0 {
+		m.setFlash("nothing to export")
+		return
+	}
+	path, err := writeJSONExport("goshs-all-logs.json", all)
+	if err != nil {
+		m.setFlash("export failed: " + err.Error())
+		return
+	}
+	m.setFlash(fmt.Sprintf("exported %d event(s) → %s", total, path))
+}
+
+// rawEvents collects a pane's stored raw event JSON in on-screen order (newest
+// first), skipping any rows without a raw payload.
+func rawEvents(p *pane) []json.RawMessage {
+	out := make([]json.RawMessage, 0, len(p.rows))
+	for _, r := range p.rows {
+		if len(r.raw) > 0 {
+			out = append(out, r.raw)
+		}
+	}
+	return out
+}
+
+// writeJSONExport marshals v to pretty-printed JSON (2-space indent, matching
+// the web UI's JSON.stringify(…, null, 2)) and writes it to name in the working
+// directory, returning the absolute path.
+func writeJSONExport(name string, v any) (string, error) {
+	// Marshal compactly first, then re-indent so embedded json.RawMessage event
+	// objects are expanded too while preserving their original key order.
+	compact, err := json.Marshal(v)
+	if err != nil {
+		return "", err
+	}
+	var pretty bytes.Buffer
+	if err := json.Indent(&pretty, compact, "", "  "); err != nil {
+		return "", err
+	}
+	dir, err := os.Getwd()
+	if err != nil {
+		dir = "."
+	}
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, pretty.Bytes(), 0o644); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+// setFlash shows a transient status message for a few seconds; the tick handler
+// clears it once flashExpiry passes.
+func (m *model) setFlash(msg string) {
+	m.flash = msg
+	m.flashExpiry = time.Now().Add(4 * time.Second)
 }
 
 // --- view -------------------------------------------------------------------
@@ -522,11 +647,13 @@ var (
 	bannerSubtle  = lipgloss.NewStyle().Foreground(lipgloss.Color(nord3))
 	tabActive     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(nord0)).Background(lipgloss.Color(nord8)).Padding(0, 1)
 	tabInactive   = lipgloss.NewStyle().Foreground(lipgloss.Color(nord4)).Background(lipgloss.Color(nord1)).Padding(0, 1)
+	tabFiller     = lipgloss.NewStyle().Background(lipgloss.Color(nord1))
 	selectedStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(nord0)).Background(lipgloss.Color(nord8))
 	dimStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color(nord3))
 	titleStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(nord8))
 	statusStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color(nord4)).Background(lipgloss.Color(nord1))
 	controlsStyle = lipgloss.NewStyle().Foreground(lipgloss.Color(nord6)).Background(lipgloss.Color(nord3))
+	flashStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(nord0)).Background(lipgloss.Color(nord14))
 	scrollThumb   = lipgloss.NewStyle().Foreground(lipgloss.Color(nord8))
 	scrollTrack   = lipgloss.NewStyle().Foreground(lipgloss.Color(nord3))
 )
@@ -586,20 +713,32 @@ func (m *model) tabs() string {
 			cells = append(cells, tabInactive.Render(label))
 		}
 	}
-	return lipgloss.JoinHorizontal(lipgloss.Top, cells...)
+	row := lipgloss.JoinHorizontal(lipgloss.Top, cells...)
+	// Extend the bar to the full terminal width so it reads as a solid strip
+	// rather than cutting off after the last tab.
+	if pad := m.width - lipgloss.Width(row); pad > 0 {
+		row += tabFiller.Render(strings.Repeat(" ", pad))
+	}
+	return row
 }
 
 // statusBar renders the bottom chrome: a wrapping info bar of server facts and
 // a context-sensitive controls line, both filling the terminal width.
 func (m *model) statusBar() string {
 	info := statusStyle.Width(m.width).Render(strings.Join(m.statusSegments(), "   "))
-	controls := controlsStyle.Width(m.width).Render(trunc(m.controlsHint(), m.width))
+	// A flash message (e.g. an export result) temporarily takes over the
+	// controls line so the operator sees the outcome without leaving the view.
+	line, style := m.controlsHint(), controlsStyle
+	if m.flash != "" {
+		line, style = m.flash, flashStyle
+	}
+	controls := style.Width(m.width).Render(trunc(line, m.width))
 	return info + "\n" + controls
 }
 
 // statusSegments collects the server facts shown in the status bar. Most come
-// straight from the parsed options; the live tunnel URL and shared-link count
-// live on the FileServer at runtime and are not surfaced here.
+// straight from the parsed options; the tunnel URL is read live via the
+// tunnelURL getter since it is assigned asynchronously once the tunnel is up.
 func (m *model) statusSegments() []string {
 	o := m.opts
 	scheme := "http"
@@ -649,13 +788,17 @@ func (m *model) statusSegments() []string {
 		add("⌨ cli")
 	}
 	if o.Tunnel {
-		add("🌍 tunnel")
+		if url := m.tunnel(); url != "" {
+			add("🌍 " + url)
+		} else {
+			add("🌍 tunnel (connecting)")
+		}
 	}
 	if o.DNS {
 		add(fmt.Sprintf("📡 dns :%d", o.DNSPort))
 	}
 	if o.SMTP {
-		add(fmt.Sprintf("✉ smtp :%d", o.SMTPPort))
+		add(fmt.Sprintf("📨 smtp :%d", o.SMTPPort))
 	}
 	if o.SMB {
 		s := fmt.Sprintf("🔑 smb :%d", o.SMBPort)
@@ -673,11 +816,20 @@ func (m *model) statusSegments() []string {
 	return seg
 }
 
+// tunnel returns the current public tunnel URL, or "" when no getter was
+// supplied (e.g. in tests) or the tunnel has not connected yet.
+func (m *model) tunnel() string {
+	if m.tunnelURL == nil {
+		return ""
+	}
+	return m.tunnelURL()
+}
+
 func (m *model) controlsHint() string {
 	if m.detail {
-		return "↑↓ event · PgUp/PgDn scroll · g/G newest/oldest · esc close · q quit"
+		return "↑↓ event · PgUp/PgDn scroll · g/G newest/oldest · e/E export · esc close · q quit"
 	}
-	return "⇄ Tab/←→ panes · ↑↓ scroll · ⏎ detail · g/G top/bottom · q quit"
+	return "⇄ Tab/←→ panes · ↑↓ scroll · ⏎ detail · g/G top/bottom · e/E export · q quit"
 }
 
 // bodyView renders exactly h lines for the active pane so the status bar stays
