@@ -674,7 +674,7 @@ export function upgradeCatcherWindows(sessionID) {
   const enc = new TextEncoder();
   const proto = location.protocol === "https:" ? "https" : "http";
   const host = location.host;
-  const url = `${proto}://${host}/ConPtyShell.ps1?embedded`;
+  const url = `${proto}://${host}/ConPtyShell.ps1?conpty`;
   // Skip cert validation for self-signed certs, then download and run ConPtyShell
   // -Upgrade hijacks the existing socket so no second connection needed
   const cmd =

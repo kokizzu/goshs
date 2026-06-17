@@ -58,6 +58,26 @@ func (s *Session) SetReadDeadline(t time.Time) error {
 	return s.conn.SetReadDeadline(t)
 }
 
+// LocalIP returns the local IP the remote connected to, i.e. the address on
+// this host that is reachable from the victim. The TUI uses it to build a
+// download URL (ConPtyShell) the victim can fetch even when the server is bound
+// to a wildcard address like 0.0.0.0.
+func (s *Session) LocalIP() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.conn == nil {
+		return ""
+	}
+	if a, ok := s.conn.LocalAddr().(*net.TCPAddr); ok {
+		return a.IP.String()
+	}
+	host, _, err := net.SplitHostPort(s.conn.LocalAddr().String())
+	if err != nil {
+		return ""
+	}
+	return host
+}
+
 func (s *Session) IsClosed() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()

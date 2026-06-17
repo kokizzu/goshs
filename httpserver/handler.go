@@ -16,6 +16,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"goshs.de/goshs/v2/catcher"
@@ -47,6 +48,77 @@ func (fs *FileServer) embedded(w http.ResponseWriter, req *http.Request) error {
 	}
 
 	return nil
+}
+
+// conPtyShellSource is the upstream location goshs downloads ConPtyShell.ps1
+// from when no local copy is provided in the webroot.
+const conPtyShellSource = "https://raw.githubusercontent.com/antonioCoco/ConPtyShell/master/Invoke-ConPtyShell.ps1"
+
+var (
+	conPtyMu    sync.Mutex
+	conPtyCache []byte
+)
+
+// conPtyShell serves ConPtyShell.ps1 for the Windows shell-upgrade feature.
+// It is no longer embedded in the binary: goshs first looks for a
+// ConPtyShell.ps1 in the webroot so operators can pin their own copy, and if
+// none is present downloads it from upstream once and caches it in memory for
+// subsequent requests. The route is reachable without authentication (see the
+// auth middleware) so a caught Windows host can fetch it.
+func (fs *FileServer) conPtyShell(w http.ResponseWriter, req *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+
+	// Prefer a local copy in the webroot.
+	local := filepath.Join(fs.Webroot, "ConPtyShell.ps1")
+	if data, err := os.ReadFile(local); err == nil {
+		logger.Infof("serving ConPtyShell.ps1 from webroot: %s", local)
+		if _, err := w.Write(data); err != nil {
+			logger.Errorf("Error writing response to browser: %+v", err)
+		}
+		body := fs.emitCollabEvent(req, http.StatusOK)
+		logger.LogRequest(req, http.StatusOK, fs.Verbose, fs.Webhook, body)
+		return
+	}
+
+	// Fall back to a cached download from upstream.
+	data, err := fetchConPtyShell()
+	if err != nil {
+		logger.Errorf("could not obtain ConPtyShell.ps1: %+v", err)
+		fs.handleError(w, req, fmt.Errorf("ConPtyShell.ps1 unavailable: %w", err), http.StatusBadGateway)
+		return
+	}
+	if _, err := w.Write(data); err != nil {
+		logger.Errorf("Error writing response to browser: %+v", err)
+	}
+	body := fs.emitCollabEvent(req, http.StatusOK)
+	logger.LogRequest(req, http.StatusOK, fs.Verbose, fs.Webhook, body)
+}
+
+// fetchConPtyShell downloads ConPtyShell.ps1 from upstream on first use and
+// caches the bytes in memory. A failed download is not cached, so the next
+// request retries.
+func fetchConPtyShell() ([]byte, error) {
+	conPtyMu.Lock()
+	defer conPtyMu.Unlock()
+	if conPtyCache != nil {
+		return conPtyCache, nil
+	}
+	logger.Infof("downloading ConPtyShell.ps1 from %s", conPtyShellSource)
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Get(conPtyShellSource)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("upstream returned %s", resp.Status)
+	}
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	conPtyCache = data
+	return conPtyCache, nil
 }
 
 // static will give static content for style and function
@@ -230,6 +302,10 @@ func (fs *FileServer) earlyBreakParameters(w http.ResponseWriter, req *http.Requ
 		}
 		body := fs.emitCollabEvent(req, http.StatusOK)
 		logger.LogRequest(req, http.StatusOK, fs.Verbose, fs.Webhook, body)
+		return true
+	}
+	if _, ok := req.URL.Query()["conpty"]; ok {
+		fs.conPtyShell(w, req)
 		return true
 	}
 	if _, ok := req.URL.Query()["share"]; ok {
