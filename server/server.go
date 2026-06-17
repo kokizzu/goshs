@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 
+	"goshs.de/goshs/v2/catcher"
 	"goshs.de/goshs/v2/clipboard"
 	"goshs.de/goshs/v2/dnsserver"
 	"goshs.de/goshs/v2/ftpserver"
@@ -18,7 +19,23 @@ import (
 	"goshs.de/goshs/v2/ws"
 )
 
-func StartAll(opts *options.Options) func(context.Context) {
+// Servers bundles the shared runtime handles a caller needs after StartAll:
+// the graceful-shutdown function plus the live event hub and reverse-shell
+// catcher manager that drive the optional TUI dashboard.
+type Servers struct {
+	Shutdown func(context.Context)
+	Hub      *ws.Hub
+	Catcher  *catcher.Manager
+	// TunnelURL returns the live public tunnel URL, or "" until the tunnel has
+	// connected (or when --tunnel is unset). It is a getter rather than a value
+	// because the URL is assigned asynchronously once the tunnel comes up.
+	TunnelURL func() string
+	// Clipboard is the shared paste-bin so the TUI can read and mutate the same
+	// clipboard the web UI uses.
+	Clipboard *clipboard.Clipboard
+}
+
+func StartAll(opts *options.Options) *Servers {
 	// Init clipboard and hub
 	clip := clipboard.New()
 	hub := ws.NewHub(clip, opts.CLI)
@@ -77,7 +94,7 @@ func StartAll(opts *options.Options) func(context.Context) {
 		}
 	}
 
-	return func(ctx context.Context) {
+	shutdown := func(ctx context.Context) {
 		if err := httpSrv.Shutdown(ctx); err != nil {
 			logger.Errorf("error shutting down HTTP server: %+v", err)
 		}
@@ -86,6 +103,14 @@ func StartAll(opts *options.Options) func(context.Context) {
 				logger.Errorf("error shutting down WebDAV server: %+v", err)
 			}
 		}
+	}
+
+	return &Servers{
+		Shutdown:  shutdown,
+		Hub:       hub,
+		Catcher:   httpSrv.CatcherMgr,
+		TunnelURL: func() string { return httpSrv.TunnelURL },
+		Clipboard: clip,
 	}
 }
 

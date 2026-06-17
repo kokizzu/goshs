@@ -172,3 +172,9 @@
 .panel.active {
     display: flex;
 }
+.ttl-indicator{color:var(--warn);cursor:default}
+.ttl-indicator .snav-label{font-family:var(--mono);font-size:9px;letter-spacing:0;text-transform:none}
+.ttl-indicator:hover{background:var(--warn-dim);color:var(--warn)}
+.ttl-indicator.ttl-expiring{color:var(--danger);animation:ttl-pulse 1s ease-in-out infinite}
+.ttl-indicator.ttl-expiring:hover{background:var(--danger-dim);color:var(--danger)}
+@keyframes ttl-pulse{0%,100%{opacity:1}50%{opacity:.45}}

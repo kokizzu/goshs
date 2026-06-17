@@ -2,7 +2,7 @@
 import { ST, updateBadge } from './state.js';
 import { cliOutput } from './cli.js';
 import { onClipboardUpdate } from './clipboard.js';
-import { onCatcherConnection } from './catcher.js';
+import { onCatcherConnection, onCatcherRefresh } from './catcher.js';
 
 let handlers = {};
 
@@ -41,6 +41,7 @@ export function connectWS() {
     else if (msg.type === "catchup") onCatchup(msg);
     else if (msg.type === "updateCLI") cliOutput(msg);
     else if (msg.type === "catcherConnection") onCatcherConnection(msg);
+    else if (msg.type === "refreshCatcher") onCatcherRefresh(msg);
   };
 }
 

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"syscall"
@@ -14,6 +15,7 @@ import (
 	"goshs.de/goshs/v2/options"
 	"goshs.de/goshs/v2/sanity"
 	"goshs.de/goshs/v2/server"
+	"goshs.de/goshs/v2/tui"
 )
 
 func main() {
@@ -62,18 +64,44 @@ func main() {
 		logger.Fatalf("Further processing failed: %+v", err)
 	}
 
-	logger.PrintBanner(goshsversion.GoshsVersion)
+	if !opts.TUI {
+		logger.PrintBanner(goshsversion.GoshsVersion)
+	}
 
 	// Start all servers
-	shutdown := server.StartAll(opts)
+	srv := server.StartAll(opts)
 
-	done := make(chan os.Signal, 1)
-	signal.Notify(done, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
-	<-done
-	logger.Infof("Received CTRL+C, shutting down gracefully...")
+	// Arm the self-destruct timer if --ttl was set. A zero TTL leaves ttlC nil,
+	// which blocks forever in the select below.
+	var ttlC <-chan time.Time
+	if opts.TTL > 0 {
+		ttlC = time.After(opts.TTL)
+		logger.Infof("Self-destruct armed: shutting down automatically in %s", opts.TTL)
+	}
+
+	if opts.TUI {
+		// The dashboard owns the terminal, so route logging away from the
+		// console for its lifetime to avoid corrupting the rendered view.
+		logger.LogFile(io.Discard)
+		if err := tui.Run(opts, srv.Hub, srv.Catcher, srv.Clipboard, srv.TunnelURL, ttlC); err != nil {
+			logger.LogFile(os.Stderr)
+			logger.Errorf("dashboard error: %+v", err)
+		}
+		logger.LogFile(os.Stderr)
+		logger.Infof("Dashboard closed, shutting down gracefully...")
+	} else {
+		done := make(chan os.Signal, 1)
+		signal.Notify(done, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+		select {
+		case <-done:
+			logger.Infof("Received CTRL+C, shutting down gracefully...")
+		case <-ttlC:
+			logger.Infof("Self-destruct timer (%s) elapsed, shutting down gracefully...", opts.TTL)
+		}
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	shutdown(ctx)
+	srv.Shutdown(ctx)
 	logger.Infof("Shutdown complete")
 }

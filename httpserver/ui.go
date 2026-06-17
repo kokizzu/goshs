@@ -44,6 +44,10 @@ type UIData struct {
 	// MaxUpload is the server-enforced upload limit in bytes (0 = unlimited).
 	// Embedded into the page so JS can show a human-readable error on 413.
 	MaxUpload int64
+
+	// TTLDeadlineUnixMs is the self-destruct moment in Unix milliseconds, or 0
+	// when --ttl is unset. JS uses it to render a live countdown.
+	TTLDeadlineUnixMs int64
 }
 
 // BreadcrumbPart is a single segment of the path breadcrumb.

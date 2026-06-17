@@ -41,6 +41,12 @@ goshs -ldap -ldap-wordlist /usr/share/wordlists/rockyou.txt
 
 # Catch DNS callbacks and receive emails
 goshs -dns -dns-ip 1.2.3.4 -smtp -smtp-domain your-domain.com
+
+# Self-destruct after 2 hours
+goshs --ttl 2h
+
+# Run with the interactive terminal dashboard (great for headless SSH sessions)
+goshs --tui
 ```
 
 # Documentation
@@ -54,10 +60,11 @@ For a detailed documentation go to [docs.goshs.de](https://docs.goshs.de)
 | 📁 **File Operations** | Download, upload (drag & drop, POST/PUT), delete, bulk ZIP, QR codes |
 | 🔌 **Protocols** | HTTP/S, WebDAV, FTP/SFTP, SMB, LDAP/S |
 | 🔒 **Auth & Security** | Basic auth, certificate auth, TLS (self-signed, Let's Encrypt, custom cert), IP whitelist, file-based ACLs |
-| ⚙️ **Server Modes** | Read-only, upload-only, no-delete, silent, invisible, CLI command execution |
+| ⚙️ **Server Modes** | Read-only, upload-only, no-delete, silent, invisible, CLI command execution, TTL self-destruct |
 | 🔗 **Share Links** | Token-based sharing, download limit, time limit |
 | 🎯 **Collaboration / CTF** | DNS server, SMTP server, SMB NTLM hash capture + cracking, LDAP credential capture + NTLM hash cracking (JNDI mode for Log4Shell), redirect endpoint, Rev Shell Catcher + Payload generator |
 | 🔔 **Integration** | Webhooks, tunnel via localhost.run, config file, JSON API, mDNS |
+| 🖥️ **TUI Dashboard** | Interactive full-screen terminal dashboard; live panes for HTTP, DNS, SMB, LDAP, SMTP, reverse shells and clipboard; attach and upgrade shells from the terminal |
 | 🛠️ **Misc** | Dark/light themes, clipboard, self-update, log output, embed files, drop privileges |
 
 # Installation

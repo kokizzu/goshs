@@ -61,5 +61,7 @@
   "ldap_port": 389,
   "ldap_jndi_enabled": false,
   "ldap_jndi_base": "",
-  "ldap_wordlist": ""
+  "ldap_wordlist": "",
+  "ttl": 0,
+  "tui": false
 }
