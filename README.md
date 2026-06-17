@@ -1,4 +1,4 @@
-![Version](https://img.shields.io/badge/Version-v2.1.0-green)
+![Version](https://img.shields.io/badge/Version-v2.1.1-green)
 [![GitHub License](https://img.shields.io/github/license/goshs-labs/goshs)](https://github.com/goshs-labs/goshs/blob/main/LICENSE)
 ![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/goshs-labs/goshs)
 [![GitHub issues](https://img.shields.io/github/issues-raw/goshs-labs/goshs)](https://github.com/goshs-labs/goshs/issues)
