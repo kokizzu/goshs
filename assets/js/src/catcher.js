@@ -729,11 +729,16 @@ export function onCatcherRefresh() {
     .then((list) => {
       const listeners = Array.isArray(list) ? list : [];
       const liveIds = new Set(listeners.map((l) => l.id));
-      const knownIds = new Set(Object.values(CT.listeners).map((l) => l.id));
 
-      // Adopt listeners we don't yet track (started elsewhere).
       listeners.forEach((info) => {
-        if (!knownIds.has(info.id)) adoptListener(info);
+        const tabId = tabIdForListener(info.id);
+        if (tabId === null) {
+          // Started elsewhere (e.g. the TUI) — adopt it as a running tab.
+          adoptListener(info);
+        } else {
+          // Already tracked — sync its session list (new shells / kills).
+          reconcileSessions(tabId, info);
+        }
       });
 
       // Mark tracked listeners that vanished (stopped elsewhere) as stopped.
@@ -801,18 +806,47 @@ function adoptListener(info) {
     sessions: [],
   };
 
+  reconcileSessions(tabId, info);
+}
+
+// tabIdForListener returns the local tab key tracking the given backend
+// listener id, or null if none.
+function tabIdForListener(listenerID) {
+  for (const [tabId, ln] of Object.entries(CT.listeners)) {
+    if (ln.id === listenerID) return tabId;
+  }
+  return null;
+}
+
+// reconcileSessions brings a tab's session cards in line with the backend's
+// session list for that listener: adds cards for new shells, removes cards for
+// shells that have gone, and restores the empty placeholder when none remain.
+function reconcileSessions(tabId, info) {
   const sessions = info.sessions || [];
-  if (sessions.length === 0) {
-    const sessContainer = document.getElementById(`sessions-${tabId}`);
-    if (sessContainer) {
-      sessContainer.innerHTML =
-        '<div class="catcher-empty">Waiting for connections...</div>';
-    }
-  } else {
-    sessions.forEach((s) => {
+  const liveIds = new Set(sessions.map((s) => s.id));
+
+  sessions.forEach((s) => {
+    if (!CT.sessions[s.id]) {
       registerSession(s.id, info.id, tabId);
       addSessionCard(tabId, s.id, s.remoteAddr);
-    });
+    }
+  });
+
+  Object.keys(CT.sessions).forEach((sid) => {
+    if (CT.sessions[sid].tabId === tabId && !liveIds.has(sid)) {
+      disconnectCatcherSession(sid);
+      document.getElementById(`session-${sid}`)?.remove();
+    }
+  });
+
+  const container = document.getElementById(`sessions-${tabId}`);
+  if (
+    container &&
+    !container.querySelector(".catcher-session") &&
+    !container.querySelector(".catcher-empty")
+  ) {
+    container.innerHTML =
+      '<div class="catcher-empty">Waiting for connections...</div>';
   }
 }
 

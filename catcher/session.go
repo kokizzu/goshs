@@ -3,6 +3,7 @@ package catcher
 import (
 	"net"
 	"sync"
+	"time"
 )
 
 type Session struct {
@@ -42,6 +43,19 @@ func (s *Session) Close() {
 	if s.conn != nil {
 		s.conn.Close()
 	}
+}
+
+// SetReadDeadline sets (or clears, with the zero time) the read deadline on the
+// underlying connection. The TUI uses this to interrupt a blocked Read when an
+// operator detaches from a session, without tearing the connection down so it
+// can be re-attached later (or kept alive for web clients).
+func (s *Session) SetReadDeadline(t time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed || s.conn == nil {
+		return nil
+	}
+	return s.conn.SetReadDeadline(t)
 }
 
 func (s *Session) IsClosed() bool {

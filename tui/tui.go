@@ -81,10 +81,19 @@ func tick() tea.Cmd {
 
 // --- model ------------------------------------------------------------------
 
+// row kinds for the SHELLS pane, distinguishing a listener row from a session
+// row so key actions (attach, kill, stop, restart) target the right object.
+const (
+	rowEvent    = ""         // ordinary collab event (default)
+	rowListener = "listener" // a catcher listener
+	rowSession  = "session"  // a connected reverse-shell session under a listener
+)
+
 type eventRow struct {
 	summary string
 	detail  string
 	accent  lipgloss.Color
+	kind    string          // "" for events; rowListener/rowSession in the SHELLS pane
 	raw     json.RawMessage // original event JSON, for export parity with the web UI
 }
 
@@ -190,6 +199,16 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case subClosedMsg:
 		return m, tea.Quit
 
+	case shellClosedMsg:
+		// Returned after detaching from (or losing) an attached session.
+		m.refreshShells()
+		if msg.err != nil {
+			m.setFlash("shell session ended: " + msg.err.Error())
+		} else {
+			m.setFlash("returned from shell session")
+		}
+		return m, nil
+
 	case ttlExpiredMsg:
 		// Self-destruct fired; quitting returns control to main, which runs
 		// the graceful shutdown.
@@ -283,7 +302,17 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case paneClipboard:
 			return m, m.deleteClipboardEntry()
 		case paneShells:
-			return m, m.stopSelectedListener()
+			return m, m.shellDelete()
+		}
+	case "r":
+		// Restart the selected listener on the same ip:port (shells pane only).
+		if m.active == paneShells {
+			return m, m.restartSelectedListener()
+		}
+	case "i":
+		// Attach to the selected reverse-shell session (shells pane only).
+		if m.active == paneShells {
+			return m, m.attachSelectedSession()
 		}
 	case "C":
 		// Clear the whole clipboard (clipboard pane only).
@@ -296,6 +325,12 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.saveSMTPAttachments()
 		}
 	case "enter":
+		// On a reverse-shell session row, ⏎ attaches; otherwise toggle detail.
+		if m.active == paneShells {
+			if cmd := m.attachSelectedSession(); cmd != nil {
+				return m, cmd
+			}
+		}
 		p := m.panes[m.active]
 		if len(p.rows) > 0 {
 			m.detail = !m.detail
@@ -626,7 +661,14 @@ func (m *model) refreshShells() {
 	p := m.panes[paneShells]
 	prevSel := p.sel
 	p.rows = p.rows[:0]
-	for _, ln := range m.mgr.GetListeners() {
+	listeners := m.mgr.GetListeners()
+	sort.SliceStable(listeners, func(i, j int) bool {
+		if listeners[i].Port != listeners[j].Port {
+			return listeners[i].Port < listeners[j].Port
+		}
+		return listeners[i].IP < listeners[j].IP
+	})
+	for _, ln := range listeners {
 		accent := lipgloss.Color(nord8) // listening, idle
 		if len(ln.Sessions) > 0 {
 			accent = lipgloss.Color(nord14) // has live sessions
@@ -639,9 +681,17 @@ func (m *model) refreshShells() {
 			fmt.Fprintf(&d, "  • %s  (session %s)\n", s.RemoteAddr, shortID(s.ID))
 		}
 		raw, _ := json.Marshal(ln)
-		p.rows = append(p.rows, eventRow{summary: summary, detail: d.String(), accent: accent, raw: raw})
+		p.rows = append(p.rows, eventRow{summary: summary, detail: d.String(), accent: accent, kind: rowListener, raw: raw})
+
+		// One row per connected session, so each shell is selectable to attach
+		// to or kill individually.
+		for _, s := range ln.Sessions {
+			sraw, _ := json.Marshal(s)
+			ssummary := fmt.Sprintf("    ↳ %-15s  session %s", s.RemoteAddr, shortID(s.ID))
+			sdetail := fmt.Sprintf("Session:   %s\nRemote:    %s\nListener:  %s:%d\n\nPress ⏎ or i to attach (Ctrl+] detaches), d to kill.\n", s.ID, s.RemoteAddr, ln.IP, ln.Port)
+			p.rows = append(p.rows, eventRow{summary: ssummary, detail: sdetail, accent: lipgloss.Color(nord14), kind: rowSession, raw: sraw})
+		}
 	}
-	sort.SliceStable(p.rows, func(i, j int) bool { return p.rows[i].summary < p.rows[j].summary })
 	if prevSel < len(p.rows) {
 		p.sel = prevSel
 	} else if len(p.rows) > 0 {
@@ -699,6 +749,102 @@ func (m *model) stopSelectedListener() tea.Cmd {
 	m.refreshShells()
 	m.setFlash(fmt.Sprintf("stopped listener %s:%d", info.IP, info.Port))
 	return m.broadcast("refreshCatcher")
+}
+
+// shellDelete acts on the selected SHELLS row: a session row is killed, a
+// listener row is stopped. Both broadcast refreshCatcher so the web UI follows.
+func (m *model) shellDelete() tea.Cmd {
+	if m.mgr == nil {
+		return nil
+	}
+	p := m.panes[paneShells]
+	if len(p.rows) == 0 {
+		m.setFlash("nothing selected")
+		return nil
+	}
+	row := p.rows[p.sel]
+	if row.kind == rowSession {
+		var info catcher.SessionInfo
+		if json.Unmarshal(row.raw, &info) != nil || info.ID == "" {
+			m.setFlash("could not identify session")
+			return nil
+		}
+		if err := m.mgr.KillSession(info.ID); err != nil {
+			m.setFlash("kill session failed: " + err.Error())
+			return nil
+		}
+		m.refreshShells()
+		m.setFlash("killed session " + shortID(info.ID))
+		return m.broadcast("refreshCatcher")
+	}
+	return m.stopSelectedListener()
+}
+
+// restartSelectedListener stops the selected listener (or the parent of the
+// selected session) and starts a fresh one on the same ip:port, then broadcasts
+// refreshCatcher so the web UI re-adopts it.
+func (m *model) restartSelectedListener() tea.Cmd {
+	if m.mgr == nil {
+		return nil
+	}
+	p := m.panes[paneShells]
+	if len(p.rows) == 0 {
+		m.setFlash("no listener selected")
+		return nil
+	}
+	row := p.rows[p.sel]
+	if row.kind != rowListener {
+		m.setFlash("select a listener to restart")
+		return nil
+	}
+	var info catcher.ListenerInfo
+	if json.Unmarshal(row.raw, &info) != nil || info.ID == "" {
+		m.setFlash("could not identify listener")
+		return nil
+	}
+	if err := m.mgr.StopListener(info.ID); err != nil {
+		m.setFlash("restart failed: " + err.Error())
+		return nil
+	}
+	started, err := m.mgr.StartListener(info.IP, info.Port)
+	if err != nil {
+		m.setFlash("restart failed: " + err.Error())
+		m.refreshShells()
+		return m.broadcast("refreshCatcher")
+	}
+	m.refreshShells()
+	m.setFlash(fmt.Sprintf("restarted listener on %s:%d", started.IP, started.Port))
+	return m.broadcast("refreshCatcher")
+}
+
+// attachSelectedSession bridges the operator's terminal to the selected
+// reverse-shell session. It returns nil (so callers can fall through to other
+// behaviour, e.g. ⏎ toggling detail) when the selection is not a session row.
+func (m *model) attachSelectedSession() tea.Cmd {
+	if m.mgr == nil || m.active != paneShells {
+		return nil
+	}
+	p := m.panes[paneShells]
+	if len(p.rows) == 0 {
+		return nil
+	}
+	row := p.rows[p.sel]
+	if row.kind != rowSession {
+		return nil
+	}
+	var info catcher.SessionInfo
+	if json.Unmarshal(row.raw, &info) != nil || info.ID == "" {
+		m.setFlash("could not identify session")
+		return nil
+	}
+	sess := m.mgr.GetSession(info.ID)
+	if sess == nil {
+		m.setFlash("session no longer connected")
+		return nil
+	}
+	return tea.Exec(&shellBridge{session: sess}, func(err error) tea.Msg {
+		return shellClosedMsg{err: err}
+	})
 }
 
 // parseListenerAddr accepts "ip:port" or a bare "port" and returns the bind IP
@@ -1172,7 +1318,7 @@ func (m *model) controlsHint() string {
 		case paneSMTP:
 			return "↑↓ event · PgUp/PgDn scroll · s save attachments · e/E export · esc close · q quit"
 		case paneShells:
-			return "↑↓ listener · a start · d stop · e export · esc close · q quit"
+			return "↑↓ row · ⏎/i attach · a start · r restart · d stop/kill · e export · esc close · q quit"
 		}
 		return "↑↓ event · PgUp/PgDn scroll · g/G newest/oldest · e/E export · esc close · q quit"
 	}
@@ -1180,7 +1326,7 @@ func (m *model) controlsHint() string {
 	case paneClipboard:
 		return "⇄ Tab/←→ panes · ↑↓ scroll · ⏎ view · a add · d delete · C clear · e export · q quit"
 	case paneShells:
-		return "⇄ Tab/←→ panes · ↑↓ scroll · ⏎ sessions · a start listener · d stop listener · e export · q quit"
+		return "⇄ Tab/←→ panes · ↑↓ select · ⏎/i attach · a start · r restart · d stop/kill · e export · q quit"
 	case paneSMTP:
 		return "⇄ Tab/←→ panes · ↑↓ scroll · ⏎ detail · s save attachments · e/E export · q quit"
 	}
