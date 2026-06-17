@@ -278,38 +278,44 @@ export function stopCatcherListener(tabId) {
     body: JSON.stringify({ id: ln.id }),
   })
     .then(() => {
-      delete CT.listeners[tabId];
-
-      // Disconnect sessions but leave their history cards in the DOM
-      Object.keys(CT.sessions).forEach((sid) => {
-        if (CT.sessions[sid].tabId === tabId) {
-          if (CT.sessions[sid].ws) {
-            CT.sessions[sid].ws.close();
-            CT.sessions[sid].ws = null;
-          }
-          if (CT.sessions[sid].term) {
-            CT.sessions[sid].term.write(
-              "\r\n\x1b[31m[Listener stopped]\x1b[0m",
-            );
-          }
-        }
-      });
-
-      // Swap header to stopped state
-      const headerEl = document
-        .getElementById(`cpanel-${tabId}`)
-        ?.querySelector(".catcher-listener-header");
-      if (headerEl) {
-        headerEl.innerHTML = `
-          <span class="catcher-stopped-text">Stopped on port <strong>${ln.port}</strong></span>
-          <div class="catcher-header-actions">
-            <button class="catcher-start-btn" onclick="showRestartForm('${tabId}', ${ln.port})">Restart</button>
-          </div>`;
-      }
-
+      markListenerStopped(tabId);
       toast(`Listener on port ${ln.port} stopped`, "ok");
     })
     .catch(() => {});
+}
+
+// markListenerStopped swaps a listener tab into its stopped state and tears
+// down any live session terminals. Used both when the operator stops a
+// listener here and when a refresh reveals it was stopped elsewhere (TUI).
+function markListenerStopped(tabId) {
+  const ln = CT.listeners[tabId];
+  if (!ln) return;
+  delete CT.listeners[tabId];
+
+  // Disconnect sessions but leave their history cards in the DOM
+  Object.keys(CT.sessions).forEach((sid) => {
+    if (CT.sessions[sid].tabId === tabId) {
+      if (CT.sessions[sid].ws) {
+        CT.sessions[sid].ws.close();
+        CT.sessions[sid].ws = null;
+      }
+      if (CT.sessions[sid].term) {
+        CT.sessions[sid].term.write("\r\n\x1b[31m[Listener stopped]\x1b[0m");
+      }
+    }
+  });
+
+  // Swap header to stopped state
+  const headerEl = document
+    .getElementById(`cpanel-${tabId}`)
+    ?.querySelector(".catcher-listener-header");
+  if (headerEl) {
+    headerEl.innerHTML = `
+      <span class="catcher-stopped-text">Stopped on port <strong>${ln.port}</strong></span>
+      <div class="catcher-header-actions">
+        <button class="catcher-start-btn" onclick="showRestartForm('${tabId}', ${ln.port})">Restart</button>
+      </div>`;
+  }
 }
 
 export function showRestartForm(tabId, lastPort) {
@@ -391,10 +397,22 @@ export function onCatcherConnection(msg) {
   }
   if (!tabId) return;
 
-  // Add session to state
-  CT.sessions[msg.sessionID] = {
-    id: msg.sessionID,
-    listenerID: msg.listenerID,
+  registerSession(msg.sessionID, msg.listenerID, tabId);
+  addSessionCard(tabId, msg.sessionID, msg.remoteAddr);
+
+  // Show badge
+  const badge = document.getElementById("catcher-badge");
+  if (badge) badge.classList.add("dot");
+
+  toast(`Reverse shell from ${msg.remoteAddr}`, "ok");
+}
+
+// registerSession records a connected session in client-side state so the
+// terminal can later be attached on demand.
+function registerSession(sessionID, listenerID, tabId) {
+  CT.sessions[sessionID] = {
+    id: sessionID,
+    listenerID,
     tabId,
     ws: null,
     term: null,
@@ -404,40 +422,38 @@ export function onCatcherConnection(msg) {
     isWindows: false,
     detectBuf: "",
   };
+}
 
-  // Update UI
+// addSessionCard renders the session card (terminal + controls) into the given
+// listener tab. No-op if the card already exists.
+function addSessionCard(tabId, sessionID, remoteAddr) {
   const container = document.getElementById(`sessions-${tabId}`);
-  if (container) {
-    const empty = container.querySelector(".catcher-empty");
-    if (empty) empty.remove();
+  if (!container) return;
+  if (document.getElementById(`session-${sessionID}`)) return;
 
-    const sessionEl = document.createElement("div");
-    sessionEl.className = "catcher-session";
-    sessionEl.id = `session-${msg.sessionID}`;
-    sessionEl.innerHTML = `
-      <div class="catcher-session-header">
-        <span class="catcher-session-addr">${esc(msg.remoteAddr)}</span>
-        <button class="catcher-session-linemode active" onclick="toggleLineMode('${msg.sessionID}')" title="Toggle line mode (for unupgraded shells)">Line</button>
-        <div class="catcher-upgrade-wrap">
-          <button class="catcher-session-upgrade" onclick="this.parentElement.classList.toggle('open')" title="Upgrade shell">↑</button>
-          <div class="catcher-upgrade-menu">
-            <button onclick="upgradeCatcherUnix('${msg.sessionID}');this.closest('.catcher-upgrade-wrap').classList.remove('open')">Unix (PTY)</button>
-            <button onclick="upgradeCatcherWindows('${msg.sessionID}');this.closest('.catcher-upgrade-wrap').classList.remove('open')">Windows (ConPtyShell)</button>
-          </div>
+  const empty = container.querySelector(".catcher-empty");
+  if (empty) empty.remove();
+
+  const sessionEl = document.createElement("div");
+  sessionEl.className = "catcher-session";
+  sessionEl.id = `session-${sessionID}`;
+  sessionEl.innerHTML = `
+    <div class="catcher-session-header">
+      <span class="catcher-session-addr">${esc(remoteAddr)}</span>
+      <button class="catcher-session-linemode active" onclick="toggleLineMode('${sessionID}')" title="Toggle line mode (for unupgraded shells)">Line</button>
+      <div class="catcher-upgrade-wrap">
+        <button class="catcher-session-upgrade" onclick="this.parentElement.classList.toggle('open')" title="Upgrade shell">↑</button>
+        <div class="catcher-upgrade-menu">
+          <button onclick="upgradeCatcherUnix('${sessionID}');this.closest('.catcher-upgrade-wrap').classList.remove('open')">Unix (PTY)</button>
+          <button onclick="upgradeCatcherWindows('${sessionID}');this.closest('.catcher-upgrade-wrap').classList.remove('open')">Windows (ConPtyShell)</button>
         </div>
-        <button class="catcher-session-resize" onclick="resizeCatcherTerm('${msg.sessionID}')" title="Resize terminal to fit"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 5V1h4M11 1h4v4M15 11v4h-4M5 15H1v-4"/><path d="M1 1l5.5 5.5M15 15l-5.5-5.5"/></svg></button>
-        <button class="catcher-session-connect" onclick="connectCatcherSession('${msg.sessionID}')">Connect</button>
-        <button class="catcher-session-kill" onclick="killCatcherSession('${msg.sessionID}')">Kill</button>
       </div>
-      <div class="catcher-terminal" id="term-${msg.sessionID}"></div>`;
-    container.appendChild(sessionEl);
-  }
-
-  // Show badge
-  const badge = document.getElementById("catcher-badge");
-  if (badge) badge.classList.add("dot");
-
-  toast(`Reverse shell from ${msg.remoteAddr}`, "ok");
+      <button class="catcher-session-resize" onclick="resizeCatcherTerm('${sessionID}')" title="Resize terminal to fit"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 5V1h4M11 1h4v4M15 11v4h-4M5 15H1v-4"/><path d="M1 1l5.5 5.5M15 15l-5.5-5.5"/></svg></button>
+      <button class="catcher-session-connect" onclick="connectCatcherSession('${sessionID}')">Connect</button>
+      <button class="catcher-session-kill" onclick="killCatcherSession('${sessionID}')">Kill</button>
+    </div>
+    <div class="catcher-terminal" id="term-${sessionID}"></div>`;
+  container.appendChild(sessionEl);
 }
 
 export function connectCatcherSession(sessionID) {
@@ -702,7 +718,108 @@ export function killCatcherSession(sessionID) {
     .catch(() => {});
 }
 
+// ── Cross-client sync ──
+// onCatcherRefresh reconciles the locally tracked listeners against the
+// backend's authoritative list. It is triggered by the "refreshCatcher"
+// broadcast (e.g. a listener started/stopped from the TUI) and on page load,
+// so listeners created outside this browser tab are reflected here too.
+export function onCatcherRefresh() {
+  fetch("/?catcher-api=list")
+    .then((r) => (r.ok ? r.json() : []))
+    .then((list) => {
+      const listeners = Array.isArray(list) ? list : [];
+      const liveIds = new Set(listeners.map((l) => l.id));
+      const knownIds = new Set(Object.values(CT.listeners).map((l) => l.id));
+
+      // Adopt listeners we don't yet track (started elsewhere).
+      listeners.forEach((info) => {
+        if (!knownIds.has(info.id)) adoptListener(info);
+      });
+
+      // Mark tracked listeners that vanished (stopped elsewhere) as stopped.
+      Object.entries(CT.listeners).forEach(([tabId, ln]) => {
+        if (!liveIds.has(ln.id)) markListenerStopped(tabId);
+      });
+    })
+    .catch(() => {});
+}
+
+// adoptListener creates a tab + panel already in the running state for a
+// backend listener that this browser tab didn't start, wiring up any sessions
+// it already holds. Does not steal focus.
+function adoptListener(info) {
+  CT.tabCounter++;
+  const tabId = `listener-${CT.tabCounter}`;
+
+  const tabsEl = document.getElementById("catcher-tabs");
+  const addBtn = tabsEl.querySelector(".ctab-add");
+  const tab = document.createElement("div");
+  tab.className = "ctab";
+  tab.id = `ctab-${tabId}`;
+  const label = document.createElement("span");
+  label.className = "ctab-label";
+  label.textContent = info.port;
+  label.ondblclick = function (e) {
+    e.stopPropagation();
+    renameListenerTab(tabId, this);
+  };
+  const close = document.createElement("span");
+  close.className = "ctab-close";
+  close.innerHTML = "&times;";
+  close.title = "Close";
+  close.onclick = function (e) {
+    e.stopPropagation();
+    destroyListenerTab(tabId);
+  };
+  tab.appendChild(label);
+  tab.appendChild(close);
+  tab.onclick = function () {
+    switchCatcherTab(tabId, this);
+  };
+  tabsEl.insertBefore(tab, addBtn);
+
+  const panel = document.createElement("div");
+  panel.className = "cpanel";
+  panel.id = `cpanel-${tabId}`;
+  panel.innerHTML = `
+    <div class="catcher-listener-panel">
+      <div class="catcher-listener-header">
+        <span>Listening on <strong>${esc(info.ip)}:${info.port}</strong></span>
+        <div class="catcher-header-actions">
+          <button class="catcher-restart-btn" onclick="restartCatcherListener('${tabId}')">Restart</button>
+          <button class="catcher-stop-btn" onclick="stopCatcherListener('${tabId}')">Stop</button>
+        </div>
+      </div>
+      <div class="catcher-sessions" id="sessions-${tabId}"></div>
+    </div>`;
+  document.querySelector(".catcher-layout").appendChild(panel);
+
+  CT.listeners[tabId] = {
+    id: info.id,
+    ip: info.ip,
+    port: info.port,
+    sessions: [],
+  };
+
+  const sessions = info.sessions || [];
+  if (sessions.length === 0) {
+    const sessContainer = document.getElementById(`sessions-${tabId}`);
+    if (sessContainer) {
+      sessContainer.innerHTML =
+        '<div class="catcher-empty">Waiting for connections...</div>';
+    }
+  } else {
+    sessions.forEach((s) => {
+      registerSession(s.id, info.id, tabId);
+      addSessionCard(tabId, s.id, s.remoteAddr);
+    });
+  }
+}
+
 // ── Init ──
 export function initCatcher() {
   initGenerator();
+  // Adopt any listeners that already exist on the backend (e.g. started from
+  // the TUI before this page loaded).
+  onCatcherRefresh();
 }

@@ -272,8 +272,7 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case paneShells:
 			if m.mgr != nil {
 				m.beginInput("start listener (ip:port or port)", func(text string) tea.Cmd {
-					m.startListener(text)
-					return nil
+					return m.startListener(text)
 				})
 			}
 		}
@@ -284,7 +283,7 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case paneClipboard:
 			return m, m.deleteClipboardEntry()
 		case paneShells:
-			m.stopSelectedListener()
+			return m, m.stopSelectedListener()
 		}
 	case "C":
 		// Clear the whole clipboard (clipboard pane only).
@@ -655,47 +654,51 @@ func (m *model) refreshShells() {
 // --- listeners --------------------------------------------------------------
 
 // startListener parses "ip:port" or a bare "port" and starts a catcher
-// listener, reporting the outcome via a flash message.
-func (m *model) startListener(addr string) {
+// listener, reporting the outcome via a flash message. On success it returns a
+// command that broadcasts refreshCatcher so the web UI adopts the new listener.
+func (m *model) startListener(addr string) tea.Cmd {
 	if m.mgr == nil {
-		return
+		return nil
 	}
 	ip, port, err := parseListenerAddr(addr)
 	if err != nil {
 		m.setFlash("invalid address: " + err.Error())
-		return
+		return nil
 	}
 	info, err := m.mgr.StartListener(ip, port)
 	if err != nil {
 		m.setFlash("start listener failed: " + err.Error())
-		return
+		return nil
 	}
 	m.refreshShells()
 	m.setFlash(fmt.Sprintf("listener started on %s:%d", info.IP, info.Port))
+	return m.broadcast("refreshCatcher")
 }
 
 // stopSelectedListener stops the listener under the selection in the SHELLS
-// pane (identified by the ListenerInfo stored on the row).
-func (m *model) stopSelectedListener() {
+// pane (identified by the ListenerInfo stored on the row). On success it
+// returns a command that broadcasts refreshCatcher so the web UI drops it.
+func (m *model) stopSelectedListener() tea.Cmd {
 	if m.mgr == nil {
-		return
+		return nil
 	}
 	p := m.panes[paneShells]
 	if len(p.rows) == 0 {
 		m.setFlash("no listener selected")
-		return
+		return nil
 	}
 	var info catcher.ListenerInfo
 	if json.Unmarshal(p.rows[p.sel].raw, &info) != nil || info.ID == "" {
 		m.setFlash("could not identify listener")
-		return
+		return nil
 	}
 	if err := m.mgr.StopListener(info.ID); err != nil {
 		m.setFlash("stop listener failed: " + err.Error())
-		return
+		return nil
 	}
 	m.refreshShells()
 	m.setFlash(fmt.Sprintf("stopped listener %s:%d", info.IP, info.Port))
+	return m.broadcast("refreshCatcher")
 }
 
 // parseListenerAddr accepts "ip:port" or a bare "port" and returns the bind IP
@@ -799,7 +802,7 @@ func (m *model) addClipboardEntry(text string) tea.Cmd {
 	}
 	m.refreshClipboard()
 	m.setFlash("added clipboard entry")
-	return m.broadcastClipboard()
+	return m.broadcast("refreshClipboard")
 }
 
 // deleteClipboardEntry removes the selected clipboard entry and tells web
@@ -820,7 +823,7 @@ func (m *model) deleteClipboardEntry() tea.Cmd {
 	}
 	m.refreshClipboard()
 	m.setFlash("deleted clipboard entry")
-	return m.broadcastClipboard()
+	return m.broadcast("refreshClipboard")
 }
 
 // clearClipboard empties the shared clipboard and tells web clients to
@@ -835,19 +838,20 @@ func (m *model) clearClipboard() tea.Cmd {
 	}
 	m.refreshClipboard()
 	m.setFlash("cleared clipboard")
-	return m.broadcastClipboard()
+	return m.broadcast("refreshClipboard")
 }
 
-// broadcastClipboard notifies web clients (and our own subscription) that the
-// shared clipboard changed so they re-fetch it. The send runs in a command so
-// it never blocks the UI loop on the unbuffered Broadcast channel.
-func (m *model) broadcastClipboard() tea.Cmd {
+// broadcast notifies web clients (and our own subscription) of a state change
+// of the given type (e.g. "refreshClipboard", "refreshCatcher") so they
+// re-fetch. The send runs in a command so it never blocks the UI loop on the
+// unbuffered Broadcast channel.
+func (m *model) broadcast(typ string) tea.Cmd {
 	if m.hub == nil {
 		return nil
 	}
 	msg, err := json.Marshal(struct {
 		Type string `json:"type"`
-	}{"refreshClipboard"})
+	}{typ})
 	if err != nil {
 		return nil
 	}
