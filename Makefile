@@ -110,10 +110,8 @@ endif
 	@git push
 	@git tag -a $(VERSION) -m "Release $(VERSION)"
 	@git push origin $(VERSION)
-	@docker build -t goshslabs/goshs:$(VERSION) .
-	@docker build -t goshslabs/goshs:latest .
-	@docker push goshslabs/goshs:$(VERSION)
-	@docker push goshslabs/goshs:latest
+	@echo "[*] Tag pushed. Docker Hub and GHCR images are now built and published by CI."
+	@echo "    See .github/workflows/docker-release.yml and ghcr-release.yml"
 
 run-unit: clean-tests
 	@go test ./ca -count=1

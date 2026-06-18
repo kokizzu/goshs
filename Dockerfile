@@ -1,5 +1,12 @@
 # Stage 1: Build the Go application
-FROM golang:1.26-alpine AS builder
+# Pin the builder to the build host's native platform and cross-compile to the
+# requested target. This avoids running the (slow) Go toolchain under QEMU when
+# building multi-arch images with buildx.
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
+
+# Provided automatically by buildx for each target platform.
+ARG TARGETOS
+ARG TARGETARCH
 
 # Set the Current Working Directory inside the container
 WORKDIR /app
@@ -13,9 +20,11 @@ RUN go mod download
 # Copy the source from the current directory to the Working Directory inside the container
 COPY . .
 
-# Build the Go app. -cover is a no-op unless GOCOVERDIR is set at runtime,
-# so it is safe to keep on for production images too.
-RUN go build -cover -o goshs .
+# Build the Go app for the requested target platform. goshs is cgo-free, so
+# CGO_ENABLED=0 yields a static binary that runs in the minimal alpine stage.
+# -cover is a no-op unless GOCOVERDIR is set at runtime, so it is safe to keep
+# on for production images too.
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -cover -o /goshs .
 
 # Stage 2: Create a minimal runtime image
 FROM alpine:latest
@@ -24,7 +33,7 @@ FROM alpine:latest
 WORKDIR /root/
 
 # Copy the Pre-built binary file from the previous stage
-COPY --from=builder /app/goshs .
+COPY --from=builder /goshs .
 
 # Coverage drop dir: integration tests bind-mount a host path here and
 # read the emitted covdata after the container shuts down gracefully.
