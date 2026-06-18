@@ -948,6 +948,7 @@ func (fs *FileServer) CreateShareHandler(w http.ResponseWriter, r *http.Request)
 			body := fs.emitCollabEvent(r, 400)
 			logger.LogRequest(r, 400, fs.Verbose, fs.Webhook, body)
 			http.Error(w, "expires needs to be integer in seconds", http.StatusBadRequest)
+			return
 		}
 		expires = now.Add(time.Duration(seconds) * time.Second)
 	}
@@ -962,6 +963,7 @@ func (fs *FileServer) CreateShareHandler(w http.ResponseWriter, r *http.Request)
 			body := fs.emitCollabEvent(r, 400)
 			logger.LogRequest(r, 400, fs.Verbose, fs.Webhook, body)
 			http.Error(w, "limit needs to be integer", http.StatusBadRequest)
+			return
 		}
 		downloadLimit = limit
 	}
