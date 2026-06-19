@@ -2,6 +2,13 @@
 # Pin the builder to the build host's native platform and cross-compile to the
 # requested target. This avoids running the (slow) Go toolchain under QEMU when
 # building multi-arch images with buildx.
+#
+# BUILDPLATFORM is predefined by buildx, but the classic builder (used by the
+# testcontainers integration build) does not set it — without a default it would
+# expand to an empty `--platform=` and fail. The default only takes effect on
+# that path; buildx overrides it per build. It selects the builder node only and
+# never affects the produced binary's architecture (that is TARGETARCH below).
+ARG BUILDPLATFORM=linux/amd64
 FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
 
 # Provided automatically by buildx for each target platform.

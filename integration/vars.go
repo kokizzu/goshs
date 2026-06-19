@@ -3,6 +3,7 @@ package integration
 import (
 	"fmt"
 	"os"
+	"runtime"
 )
 
 var (
@@ -16,4 +17,10 @@ var (
 	// coverBuildArg enables coverage instrumentation in the test image only;
 	// passed through to the Dockerfile's COVER build arg.
 	coverBuildArg = "-cover"
+	// Host platform passed to the Dockerfile so the classic builder (which,
+	// unlike buildx, does not predefine these) builds the image natively for
+	// the machine running the tests.
+	hostOS       = runtime.GOOS
+	hostArch     = runtime.GOARCH
+	hostPlatform = runtime.GOOS + "/" + runtime.GOARCH
 )

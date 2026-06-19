@@ -92,7 +92,10 @@ func spawnTestContainer(t *testing.T, config string, webdav bool, smb bool) nat.
 			Repo:       "goshs-labs/goshs",
 			Tag:        "integration",
 			BuildArgs: map[string]*string{
-				"COVER": &coverBuildArg,
+				"COVER":         &coverBuildArg,
+				"BUILDPLATFORM": &hostPlatform,
+				"TARGETOS":      &hostOS,
+				"TARGETARCH":    &hostArch,
 			},
 		},
 		// GOCOVERDIR is only honoured by the -cover instrumented test image;
