@@ -1,4 +1,4 @@
-![Version](https://img.shields.io/badge/Version-v2.1.1-green)
+![Version](https://img.shields.io/github/v/release/goshs-labs/goshs?label=Version&color=green)
 [![GitHub License](https://img.shields.io/github/license/goshs-labs/goshs)](https://github.com/goshs-labs/goshs/blob/main/LICENSE)
 ![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/goshs-labs/goshs)
 [![GitHub issues](https://img.shields.io/github/issues-raw/goshs-labs/goshs)](https://github.com/goshs-labs/goshs/issues)
@@ -111,12 +111,20 @@ source ~/.local/share/bash-completion/completions/goshs
 <details>
 <summary>🔧 Build yourself</summary>
 
-Building requirements are [esbuild](https://github.com/evanw/esbuild) and [sass](https://sass-lang.com/install). After installing these packages run:
+The bundled web assets are committed, so a plain build just works:
 
 ```bash
 git clone https://github.com/goshs-labs/goshs.git
 cd goshs
-make build-all
+go build -o goshs .
+```
+
+If you change the JavaScript or SCSS sources, rebuild the assets first with
+[esbuild](https://github.com/evanw/esbuild) and [sass](https://sass-lang.com/install) installed:
+
+```bash
+make generate
+go build -o goshs .
 ```
 
 </details>
