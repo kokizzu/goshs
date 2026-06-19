@@ -48,7 +48,7 @@ endif
 	@git tag -a $(VERSION) -m "Release $(VERSION)"
 	@git push origin $(VERSION)
 	@echo "[*] Tag pushed. Release binaries, packages, and Docker images are built and published by CI."
-	@echo "    See .github/workflows/release.yml, docker-release.yml and ghcr-release.yml"
+	@echo "    See .github/workflows/release.yml and docker-release.yml"
 
 run-unit: clean-tests
 	@go test $$(go list ./... | grep -v /integration) -count=1

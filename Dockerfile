@@ -20,11 +20,15 @@ RUN go mod download
 # Copy the source from the current directory to the Working Directory inside the container
 COPY . .
 
-# Build the Go app for the requested target platform. goshs is cgo-free, so
-# CGO_ENABLED=0 yields a static binary that runs in the minimal alpine stage.
-# -cover is a no-op unless GOCOVERDIR is set at runtime, so it is safe to keep
-# on for production images too.
-RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -cover -o /goshs .
+# Coverage instrumentation is opt-in via the COVER build arg (pass
+# --build-arg COVER=-cover); it stays OFF for released images so they ship a
+# clean, uninstrumented binary. The integration tests enable it to collect
+# covdata. goshs is cgo-free, so CGO_ENABLED=0 yields a static binary that runs
+# in the minimal alpine stage; -trimpath and -s -w shrink it and make the build
+# reproducible (matching .goreleaser.yml).
+ARG COVER=""
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} \
+    go build -trimpath -ldflags="-s -w" ${COVER} -o /goshs .
 
 # Stage 2: Create a minimal runtime image
 FROM alpine:latest
@@ -34,13 +38,6 @@ WORKDIR /root/
 
 # Copy the Pre-built binary file from the previous stage
 COPY --from=builder /goshs .
-
-# Coverage drop dir: integration tests bind-mount a host path here and
-# read the emitted covdata after the container shuts down gracefully.
-# The dir is world-writable so the non-root user (1000:1000) the tests
-# run as can write to it.
-ENV GOCOVERDIR=/covdata
-RUN mkdir -p /covdata && chmod 0777 /covdata
 
 # Command to run the executable
 ENTRYPOINT ["./goshs"]

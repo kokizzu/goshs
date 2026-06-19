@@ -9,12 +9,12 @@ _goshs() {
     local flags="--completion \
 -i --ip -p --port -d --dir -w --webdav -wp --webdav-port \
 -ro --read-only -uo --upload-only -uf --upload-folder -mu --max-upload \
--nc --no-clipboard -nd --no-delete -si --silent -I --invisible \
+-nc --no-clipboard -nd --no-delete -si --silent -I --invisible --ttl --tui \
 -c --cli --catcher -rc -e --embedded -o --output -t --tunnel \
 -s --ssl -ss --self-signed -sk --server-key -sc --server-cert \
 -p12 --pkcs12 -p12np --p12-no-pass -sl --lets-encrypt \
 -sld --le-domains -sle --le-email -slh --le-http -slt --le-tls \
--sftp -sp --sftp-port -skf --sftp-keyfile -shk --sftp-host-keyfile \
+-ftp --ftp-port --ftp-sftp -fkf --ftp-keyfile -fhk --ftp-host-keyfile \
 -smb -smb-port -smb-domain -smb-share -smb-wordlist \
 -ldap -ldap-port -ldap-jndi -ldap-jndi-base -ldap-wordlist \
 -b --basic-auth -ca --cert-auth -H --hash \
@@ -33,7 +33,7 @@ _goshs() {
     case "$prev" in
         -d|--dir|-uf|--upload-folder|-o|--output|-C|--config|\
         -sk|--server-key|-sc|--server-cert|-p12|--pkcs12|\
-        -ca|--cert-auth|-skf|--sftp-keyfile|-shk|--sftp-host-keyfile|\
+        -ca|--cert-auth|-fkf|--ftp-keyfile|-fhk|--ftp-host-keyfile|\
         -smb-wordlist|-ldap-wordlist)
             _filedir
             return 0

@@ -91,7 +91,14 @@ func spawnTestContainer(t *testing.T, config string, webdav bool, smb bool) nat.
 			Dockerfile: "Dockerfile",
 			Repo:       "goshs-labs/goshs",
 			Tag:        "integration",
+			BuildArgs: map[string]*string{
+				"COVER": &coverBuildArg,
+			},
 		},
+		// GOCOVERDIR is only honoured by the -cover instrumented test image;
+		// it points at the bind-mounted /covdata below. Released images set
+		// neither, so they emit no coverage data.
+		Env: map[string]string{"GOCOVERDIR": "/covdata"},
 		HostConfigModifier: func(hc *container.HostConfig) {
 			// Bind-mount host coverage dir so the -cover instrumented
 			// binary's emitted covdata survives container removal.
