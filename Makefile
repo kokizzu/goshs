@@ -1,4 +1,4 @@
-.PHONY: build-all
+.PHONY: generate security fmt fmt-check vet check new-version run-unit run-unit-no-network run-integration clean-tests run-tests run install clean
 
 # esbuild and sass needed
 generate:
@@ -16,83 +16,21 @@ security:
 	@gosec ./...
 	@echo "[OK] No issues detected"
 
+fmt:
+	@gofmt -w .
+	@echo "[OK] Formatted"
 
-build-all: clean generate build-linux build-mac build-windows build-dragonfly build-freebsd build-openbsd build-netbsd
+fmt-check:
+	@test -z "$$(gofmt -l .)" || { echo "[!] Needs gofmt:"; gofmt -l .; exit 1; }
+	@echo "[OK] Formatting clean"
 
-build-linux: clean generate
-	@echo "[*] go mod dowload"
-	@go mod download
-	@echo "[*] Building for linux"
-	@GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o dist/linux_amd64/goshs
-	@GOOS=linux GOARCH=386 go build -ldflags="-s -w" -o dist/linux_386/goshs
-	@GOOS=linux GOARCH=arm GOARM=5 go build -ldflags="-s -w" -o dist/linux_arm_5/goshs
-	@GOOS=linux GOARCH=arm GOARM=6 go build -ldflags="-s -w" -o dist/linux_arm_6/goshs
-	@GOOS=linux GOARCH=arm GOARM=7 go build -ldflags="-s -w" -o dist/linux_arm_7/goshs
-	@GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o dist/linux_arm64_8/goshs
-	@echo "[OK] App binary was created!"
+vet:
+	@echo "[*] Running go vet"
+	@go vet ./...
+	@echo "[OK] go vet clean"
 
-build-mac: clean generate
-	@echo "[*] go mod dowload"
-	@go mod download
-	@echo "[*] Building for mac"
-	@GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o dist/darwin_amd64/goshs
-	@GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o dist/darwin_arm64/goshs
-	@echo "[OK] App binary was created!"
-
-build-windows: clean generate
-	@echo "[*] go mod dowload"
-	@go mod download
-	@echo "[*] Building for windows"
-	@GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o dist/windows_amd64/goshs.exe
-	@GOOS=windows GOARCH=386 go build -ldflags="-s -w" -o dist/windows_386/goshs.exe
-	@GOOS=windows GOARCH=arm GOARM=5 go build -ldflags="-s -w" -o dist/windows_arm_5/goshs.exe
-	@GOOS=windows GOARCH=arm GOARM=6 go build -ldflags="-s -w" -o dist/windows_arm_6/goshs.exe
-	@GOOS=windows GOARCH=arm GOARM=7 go build -ldflags="-s -w" -o dist/windows_arm_7/goshs.exe
-	@GOOS=windows GOARCH=arm64 go build -ldflags="-s -w" -o dist/windows_arm64_8/goshs.exe
-	@echo "[OK] App binary was created!"
-
-build-dragonfly: clean generate
-	@echo "[*] go mod dowload"
-	@go mod download
-	@echo "[*] Building for dragonfly"
-	@GOOS=dragonfly GOARCH=amd64 go build -ldflags="-s -w" -o dist/dragonfly_amd64/goshs
-	@echo "[OK] App binary was created!"
-
-build-freebsd: clean generate
-	@echo "[*] go mod dowload"
-	@go mod download
-	@echo "[*] Building for freebsd"
-	@GOOS=freebsd GOARCH=amd64 go build -ldflags="-s -w" -o dist/freebsd_amd64/goshs
-	@GOOS=freebsd GOARCH=386 go build -ldflags="-s -w" -o dist/freebsd_386/goshs
-	@GOOS=freebsd GOARCH=arm GOARM=5 go build -ldflags="-s -w" -o dist/freebsd_arm_5/goshs
-	@GOOS=freebsd GOARCH=arm GOARM=6 go build -ldflags="-s -w" -o dist/freebsd_arm_6/goshs
-	@GOOS=freebsd GOARCH=arm GOARM=7 go build -ldflags="-s -w" -o dist/freebsd_arm_7/goshs
-	@GOOS=freebsd GOARCH=arm64 go build -ldflags="-s -w" -o dist/freebsd_arm64_8/goshs
-	@echo "[OK] App binary was created!"
-
-build-openbsd: clean generate
-	@echo "[*] go mod dowload"
-	@go mod download
-	@echo "[*] Building for openbsd"
-	@GOOS=openbsd GOARCH=amd64 go build -ldflags="-s -w" -o dist/openbsd_amd64/goshs
-	@GOOS=openbsd GOARCH=386 go build -ldflags="-s -w" -o dist/openbsd_386/goshs
-	@GOOS=openbsd GOARCH=arm GOARM=5 go build -ldflags="-s -w" -o dist/openbsd_arm_5/goshs
-	@GOOS=openbsd GOARCH=arm GOARM=6 go build -ldflags="-s -w" -o dist/openbsd_arm_6/goshs
-	@GOOS=openbsd GOARCH=arm GOARM=7 go build -ldflags="-s -w" -o dist/openbsd_arm_7/goshs
-	@GOOS=openbsd GOARCH=arm64 go build -ldflags="-s -w" -o dist/openbsd_arm64_8/goshs
-	@echo "[OK] App binary was created!"
-
-build-netbsd: clean generate
-	@echo "[*] go mod dowload"
-	@go mod download
-	@echo "[*] Building for netbsd"
-	@GOOS=netbsd GOARCH=amd64 go build -ldflags="-s -w" -o dist/netbsd_amd64/goshs
-	@GOOS=netbsd GOARCH=386 go build -ldflags="-s -w" -o dist/netbsd_386/goshs
-	@GOOS=netbsd GOARCH=arm GOARM=5 go build -ldflags="-s -w" -o dist/netbsd_arm_5/goshs
-	@GOOS=netbsd GOARCH=arm GOARM=6 go build -ldflags="-s -w" -o dist/netbsd_arm_6/goshs
-	@GOOS=netbsd GOARCH=arm GOARM=7 go build -ldflags="-s -w" -o dist/netbsd_arm_7/goshs
-	@GOOS=netbsd GOARCH=arm64 go build -ldflags="-s -w" -o dist/netbsd_arm64_8/goshs
-	@echo "[OK] App binary was created!"
+# on-demand quality gate (formatting + vet); security and tests are run separately
+check: fmt-check vet
 
 new-version:
 ifndef VERSION
@@ -100,54 +38,23 @@ ifndef VERSION
 endif
 	@echo "Updating version to $(VERSION)..."
 	@sed -i 's/var GoshsVersion = "v[^"]*"/var GoshsVersion = "$(VERSION)"/' goshsversion/version.go
-	@sed -i 's|https://img.shields.io/badge/Version-v[^-]*-green|https://img.shields.io/badge/Version-$(VERSION)-green|' README.md
 	@SPECVER=$$(echo "$(VERSION)" | sed 's/^v//'); \
 	DATE=$$(date '+%a %b %d %Y'); \
 	sed -i "s|^Version:.*|Version:        $$SPECVER|" packaging/rpm/goshs.spec; \
 	sed -i "/^%changelog/a * $$DATE Patrick Hener <patrickhener@gmx.de> - $$SPECVER-1\n- Add new version $(VERSION)" packaging/rpm/goshs.spec
-	@git add goshsversion/version.go README.md packaging/rpm/goshs.spec
+	@git add goshsversion/version.go packaging/rpm/goshs.spec
 	@git commit -m "New version $(VERSION)"
 	@git push
 	@git tag -a $(VERSION) -m "Release $(VERSION)"
 	@git push origin $(VERSION)
-	@echo "[*] Tag pushed. Docker Hub and GHCR images are now built and published by CI."
-	@echo "    See .github/workflows/docker-release.yml and ghcr-release.yml"
+	@echo "[*] Tag pushed. Release binaries, packages, and Docker images are built and published by CI."
+	@echo "    See .github/workflows/release.yml and docker-release.yml"
 
 run-unit: clean-tests
-	@go test ./ca -count=1
-	@go test ./cli -count=1
-	@go test ./clipboard -count=1
-	@go test ./config -count=1
-	@go test ./dnsserver -count=1
-	@go test ./httpserver -count=1
-	@go test ./logger -count=1
-	@go test ./sanity -count=1
-	@go test ./sftpserver -count=1
-	@go test ./smbserver -count=1
-	@go test ./smtpattach -count=1
-	@go test ./smtpserver -count=1
-	@go test ./update -count=1
-	@go test ./utils -count=1
-	@go test ./webhook -count=1
-	@go test ./ws -count=1
+	@go test $$(go list ./... | grep -v /integration) -count=1
 
 run-unit-no-network:
-	@go test -short ./ca -count=1
-	@go test -short ./cli -count=1
-	@go test -short ./clipboard -count=1
-	@go test -short ./config -count=1
-	@go test -short ./dnsserver -count=1
-	@go test -short ./httpserver -count=1
-	@go test -short ./logger -count=1
-	@go test -short ./sanity -count=1
-	@go test -short ./sftpserver -count=1
-	@go test -short ./smbserver -count=1
-	@go test -short ./smtpattach -count=1
-	@go test -short ./smtpserver -count=1
-	@go test -short ./update -count=1
-	@go test -short ./utils -count=1
-	@go test -short ./webhook -count=1
-	@go test -short ./ws -count=1
+	@go test -short $$(go list ./... | grep -v /integration) -count=1
 
 run-integration: clean-tests
 	@go test -v ./integration -count=1

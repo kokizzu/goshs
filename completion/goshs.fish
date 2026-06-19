@@ -20,6 +20,8 @@ complete -c goshs -l no-clipboard       -d 'Disable clipboard sharing'
 complete -c goshs -l no-delete          -d 'Disable delete option'
 complete -c goshs -l silent             -d 'Run without directory listing'
 complete -c goshs -s I -l invisible     -d 'Invisible mode'
+complete -c goshs -l ttl                -d 'Self-destruct after this duration (e.g. 30m, 2h; 0 disables)'
+complete -c goshs -l tui                -d 'Run the interactive terminal dashboard'
 complete -c goshs -s c -l cli           -d 'Enable CLI (requires auth and TLS)'
 complete -c goshs -l catcher            -d 'Enable reverse shell catcher'
 complete -c goshs -s e -l embedded      -d 'Show embedded files in UI'
@@ -39,11 +41,12 @@ complete -c goshs -l le-email            -d 'Email for Let\'s Encrypt'
 complete -c goshs -l le-http             -d 'Port for Let\'s Encrypt HTTP challenge (default: 80)'
 complete -c goshs -l le-tls              -d 'Port for Let\'s Encrypt TLS ALPN challenge (default: 443)'
 
-# SFTP
-complete -c goshs -l sftp                -d 'Activate SFTP server'
-complete -c goshs -l sftp-port           -d 'SFTP port (default: 2022)'
-complete -c goshs -l sftp-keyfile        -d 'Authorized_keys file for pubkey auth' -r -F
-complete -c goshs -l sftp-host-keyfile   -d 'SSH host key file' -r -F
+# FTP / SFTP
+complete -c goshs -l ftp                 -d 'Activate FTP server'
+complete -c goshs -l ftp-port            -d 'FTP port (default: 2121)'
+complete -c goshs -l ftp-sftp            -d 'Use SFTP instead of plain FTP'
+complete -c goshs -l ftp-keyfile         -d 'Authorized_keys file for pubkey auth' -r -F
+complete -c goshs -l ftp-host-keyfile    -d 'SSH host key file' -r -F
 
 # SMB
 complete -c goshs -l smb                 -d 'Activate SMB server'
