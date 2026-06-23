@@ -452,6 +452,24 @@ func (fileS *FileServer) applyCustomAuth(w http.ResponseWriter, req *http.Reques
 	return true
 }
 
+// aclSatisfied reports whether req satisfies the ACL's auth requirement. Unlike
+// applyCustomAuth it writes nothing to the response, so it is safe to call mid-
+// response (e.g. while streaming a zip archive in bulkDownload).
+func aclSatisfied(req *http.Request, acl configFile) bool {
+	if acl.Auth == "" {
+		return true
+	}
+	username, password, authOK := req.BasicAuth()
+	if !authOK {
+		return false
+	}
+	user, passwordHash, ok := strings.Cut(acl.Auth, ":")
+	if !ok {
+		return false
+	}
+	return username == user && checkPasswordHash(password, passwordHash)
+}
+
 func (fileS *FileServer) constructEmbedded() []item {
 	var err error
 	// Construct Items for embedded files
@@ -972,7 +990,8 @@ func (fs *FileServer) CreateShareHandler(w http.ResponseWriter, r *http.Request)
 	stat, err = os.Stat(fpath)
 	if err != nil {
 		logger.Errorf("cannot get stat information for file: %s", fpath)
-		http.Error(w, "cannot get stat informatio for file", 400)
+		http.Error(w, "cannot get stat information for file", 400)
+		return
 	}
 
 	// Fetch token

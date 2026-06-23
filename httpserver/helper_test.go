@@ -35,10 +35,24 @@ func TestSanitizePath_TraversalDotDot(t *testing.T) {
 
 func TestSanitizePath_EncodedTraversal(t *testing.T) {
 	root := "/srv/files"
-	// "%2e%2e" decodes to ".." which resolves within root via the "/" prefix.
+	// sanitizePath no longer URL-decodes its input (net/http already decodes
+	// r.URL.Path and query values). A literal "%2e%2e" is therefore treated as
+	// an ordinary directory name and stays safely within root rather than being
+	// interpreted as a ".." traversal.
 	result, err := sanitizePath(root, "/%2e%2e/etc/passwd")
 	require.NoError(t, err)
-	require.Equal(t, "/srv/files/etc/passwd", result)
+	require.Equal(t, "/srv/files/%2e%2e/etc/passwd", result)
+}
+
+func TestSanitizePath_PreservesPercentAndPlus(t *testing.T) {
+	root := "/srv/files"
+	// Legitimate names containing '%' or '+' must survive unchanged — the bug
+	// fixed by removing the redundant second URL-decode.
+	for _, name := range []string{"/100%done.txt", "/a+b.txt", "/note%20draft.txt"} {
+		result, err := sanitizePath(root, name)
+		require.NoError(t, err)
+		require.Equal(t, root+name, result)
+	}
 }
 
 func TestSanitizePath_MultiLevelTraversal(t *testing.T) {

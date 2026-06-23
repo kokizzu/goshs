@@ -9,7 +9,6 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,16 +17,13 @@ import (
 	"goshs.de/goshs/v2/logger"
 )
 
-// sanitizePath validates that requestPath stays within root after decoding and
-// cleaning. It returns the absolute path on success, or an error if the path
-// would escape root (path traversal).
+// sanitizePath validates that requestPath stays within root after cleaning. It
+// returns the absolute path on success, or an error if the path would escape
+// root (path traversal). requestPath is expected to be already URL-decoded
+// (net/http decodes r.URL.Path and query values), so it must not be decoded
+// again here — doing so would corrupt legitimate names containing '%' or '+'.
 func sanitizePath(root, requestPath string) (string, error) {
-	decoded, err := url.QueryUnescape(requestPath)
-	if err != nil {
-		// Malformed percent-encoding — use raw value; filepath.Clean will handle it.
-		decoded = requestPath
-	}
-	clean := filepath.Clean("/" + strings.TrimLeft(decoded, "/"))
+	clean := filepath.Clean("/" + strings.TrimLeft(requestPath, "/"))
 	abs := filepath.Join(root, clean)
 	rootClean := filepath.Clean(root)
 	if abs != rootClean && !strings.HasPrefix(abs, rootClean+string(filepath.Separator)) {

@@ -35,6 +35,41 @@ func newFS(user, pass string) *FileServer {
 	}
 }
 
+// After a lockout has elapsed, a valid login must be accepted (and clear the
+// failure record) rather than remaining blocked.
+func TestVerifyCredentials_ValidLoginAfterLockoutExpiry(t *testing.T) {
+	fs := newFS("user", "pass")
+	fs.authFailures = map[string]*authFailEntry{
+		"192.0.2.1": {count: authMaxFailures, lockedUntil: time.Now().Add(-time.Second)},
+	}
+
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Set("Authorization", basicAuthHeader("user", "pass"))
+	_, ok := fs.verifyCredentials(r)
+
+	require.True(t, ok, "valid login after lockout expiry must succeed")
+	require.NotContains(t, fs.authFailures, "192.0.2.1", "successful login clears the failure record")
+}
+
+// A single failed attempt after a lockout has elapsed must NOT immediately
+// re-lock the client: the counter must have been reset to zero first.
+func TestVerifyCredentials_FailureAfterLockoutExpiryDoesNotRelock(t *testing.T) {
+	fs := newFS("user", "pass")
+	fs.authFailures = map[string]*authFailEntry{
+		"192.0.2.1": {count: authMaxFailures, lockedUntil: time.Now().Add(-time.Second)},
+	}
+
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Set("Authorization", basicAuthHeader("user", "wrongpass"))
+	_, ok := fs.verifyCredentials(r)
+
+	require.False(t, ok)
+	entry := fs.authFailures["192.0.2.1"]
+	require.NotNil(t, entry)
+	require.Equal(t, 1, entry.count, "counter should reset after lockout expiry, then count this failure as the first")
+	require.True(t, entry.lockedUntil.IsZero(), "a single post-expiry failure must not re-lock")
+}
+
 func TestBasicAuthMiddleware_NoAuthHeader(t *testing.T) {
 	fs := newFS("user", "pass")
 	called := false

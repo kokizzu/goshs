@@ -238,7 +238,15 @@ func (fs *FileServer) bulkDownload(w http.ResponseWriter, req *http.Request) {
 		if err != nil {
 			continue
 		}
-		acl, aclErr := fs.findEffectiveACL(filepath.Dir(absPath))
+		// Determine the directory whose ACL governs this selection. For a
+		// directory we must start the (upward-walking) ACL lookup at the
+		// directory itself, otherwise a .goshs placed *inside* the selected
+		// directory would be ignored. For a file we start at its parent.
+		governing := absPath
+		if info, statErr := os.Stat(absPath); statErr != nil || !info.IsDir() {
+			governing = filepath.Dir(absPath)
+		}
+		acl, aclErr := fs.findEffectiveACL(governing)
 		if aclErr == nil {
 			if ok := fs.applyCustomAuth(w, req, acl); !ok {
 				return
@@ -266,7 +274,7 @@ func (fs *FileServer) bulkDownload(w http.ResponseWriter, req *http.Request) {
 	defer resultZip.Close()
 
 	// Path walker for recursion
-	walker := func(filepath string, info os.FileInfo, err error) error {
+	walker := func(walkPath string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -274,9 +282,29 @@ func (fs *FileServer) bulkDownload(w http.ResponseWriter, req *http.Request) {
 			return nil
 		}
 
+		// Never include the ACL config file itself — it contains credential hashes.
+		if filepath.Base(walkPath) == ".goshs" {
+			return nil
+		}
+
+		// Re-enforce the effective ACL for this file's own directory. The
+		// top-level selection was already checked above, but filepath.Walk
+		// descends into nested directories that may carry their own restrictive
+		// .goshs (auth or block list). Response headers are already written at
+		// this point, so we cannot prompt — silently skip files the caller is
+		// not allowed to read instead of leaking them into the archive.
+		if acl, aclErr := fs.findEffectiveACL(filepath.Dir(walkPath)); aclErr == nil {
+			if !aclSatisfied(req, acl) {
+				return nil
+			}
+			if slices.Contains(acl.Block, filepath.Base(walkPath)) {
+				return nil
+			}
+		}
+
 		// disable G304 (CWE-22): Potential file inclusion via variable
 		// #nosec G304
-		file, err := os.Open(filepath)
+		file, err := os.Open(walkPath)
 		if err != nil {
 			return err
 		}
@@ -284,11 +312,11 @@ func (fs *FileServer) bulkDownload(w http.ResponseWriter, req *http.Request) {
 		// #nosec G307
 		defer file.Close()
 
-		// filepath is fs.Webroot + file relative path
+		// walkPath is fs.Webroot + file relative path
 		// this would result in a lot of nested folders
 		// so we are stripping fs.Webroot again from the structure of the zip file
 		// Leaving us with the relative path of the file
-		zippath := strings.ReplaceAll(filepath, fs.Webroot, "")
+		zippath := strings.ReplaceAll(walkPath, fs.Webroot, "")
 		header := &zip.FileHeader{
 			Name:     zippath[1:],
 			Method:   zip.Deflate,

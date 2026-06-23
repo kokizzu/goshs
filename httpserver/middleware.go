@@ -46,10 +46,18 @@ func (fs *FileServer) verifyCredentials(r *http.Request) (authVal string, ok boo
 		fs.authFailures = make(map[string]*authFailEntry)
 	}
 	entry := fs.authFailures[clientIP]
-	if entry != nil && time.Now().Before(entry.lockedUntil) {
-		fs.authFailMu.Unlock()
-		logger.Warnf("[AUTH] %s is locked out due to repeated failures", clientIP)
-		return "", false
+	if entry != nil {
+		if time.Now().Before(entry.lockedUntil) {
+			fs.authFailMu.Unlock()
+			logger.Warnf("[AUTH] %s is locked out due to repeated failures", clientIP)
+			return "", false
+		}
+		// Lockout has elapsed — reset the counter so the client starts fresh
+		// instead of being re-locked by a single subsequent failure.
+		if !entry.lockedUntil.IsZero() {
+			entry.count = 0
+			entry.lockedUntil = time.Time{}
+		}
 	}
 	fs.authFailMu.Unlock()
 

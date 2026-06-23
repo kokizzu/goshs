@@ -40,6 +40,20 @@ func newTestFileServer(t *testing.T, webroot string) (*FileServer, func()) {
 	return fs, func() {} // hub goroutine is cleaned up by process exit in tests
 }
 
+// CreateShareHandler must not dereference a nil os.FileInfo when the target
+// path cannot be stat'd (regression for the missing return after http.Error).
+func TestCreateShareHandler_StatError_NoPanic(t *testing.T) {
+	fs, cleanup := newTestFileServer(t, t.TempDir())
+	defer cleanup()
+	fs.Pass = "secret" // sharing is only enabled when auth is configured
+
+	r := httptest.NewRequest(http.MethodGet, "/does-not-exist?share", nil)
+	w := httptest.NewRecorder()
+
+	require.NotPanics(t, func() { fs.CreateShareHandler(w, r) })
+	require.Equal(t, http.StatusBadRequest, w.Code)
+}
+
 // ─── handleMkdir ─────────────────────────────────────────────────────────────
 
 func TestHandleMkdir_Success(t *testing.T) {
