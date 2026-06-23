@@ -817,11 +817,32 @@ func (fs *FileServer) sendFile(w http.ResponseWriter, req *http.Request, file *o
 		w.Header().Set("Content-Type", utils.MimeByExtension(stat.Name()))
 	}
 
+	// Payload templating: when enabled and explicitly requested with ?tpl, render
+	// the file through text/template and serve the result instead of the raw
+	// bytes. Rendered output is served with a zero modtime so it is never cached
+	// as if it were a static file.
+	var content io.ReadSeeker = file
+	modtime := stat.ModTime()
+	if fs.templatingEnabled() && req.URL.Query().Has("tpl") {
+		raw, err := io.ReadAll(file)
+		if err != nil {
+			fs.handleError(w, req, err, http.StatusInternalServerError)
+			return
+		}
+		rendered, err := fs.renderTemplate(raw)
+		if err != nil {
+			fs.handleError(w, req, fmt.Errorf("template render failed: %w (if this is about LHOST, bind a single IP with -i or pass --tpl-var LHOST=...)", err), http.StatusInternalServerError)
+			return
+		}
+		content = bytes.NewReader(rendered)
+		modtime = time.Time{}
+	}
+
 	// http.ServeContent handles Range / If-Range / If-Modified-Since requests
 	// (206 Partial Content, 304 Not Modified), HEAD, Content-Length,
 	// Last-Modified and Accept-Ranges — enabling resumable and seekable
-	// downloads. The *os.File is the required io.ReadSeeker.
-	http.ServeContent(w, req, stat.Name(), stat.ModTime(), file)
+	// downloads. The *os.File (or rendered bytes.Reader) is the io.ReadSeeker.
+	http.ServeContent(w, req, stat.Name(), modtime, content)
 
 	// Send webhook message
 	event, verb := "view", "viewed"

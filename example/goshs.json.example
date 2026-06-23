@@ -63,5 +63,7 @@
   "ldap_jndi_base": "",
   "ldap_wordlist": "",
   "ttl": 0,
-  "tui": false
+  "tui": false,
+  "template": false,
+  "template_vars": []
 }

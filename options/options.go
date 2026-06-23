@@ -17,74 +17,87 @@ import (
 )
 
 type Options struct {
-	IP                  string        // "0.0.0.0"
-	Port                int           // 8000
-	Webroot             string        // "."
-	SSL                 bool          // false
-	SelfSigned          bool          // false
-	MyKey               string        // ""
-	MyCert              string        // ""
-	MyP12               string        // ""
-	P12NoPass           bool          // false
-	CLI                 bool          // false
-	UploadFolder        string        // ""
-	LetsEncrypt         bool          // false
-	BasicAuth           string        // ""
-	Username            string        // "" will be constructed from BasicAuth
-	Password            string        // "" will be constructed from BasicAuth
-	CertAuth            string        // ""
-	WebDav              bool          // false
-	WebDavPort          int           // 8001
-	UploadOnly          bool          // false
-	ReadOnly            bool          // false
-	NoClipboard         bool          // false
-	NoDelete            bool          // false
-	Verbose             bool          // false
-	Silent              bool          // false
-	DropUser            string        // ""
-	LEEmail             string        // ""
-	LEDomains           string        // ""
-	LEHTTPPort          string        //"80"
-	LETLSPort           string        // "443"
-	Embedded            bool          // false
-	Output              string        // ""
-	ConfigFile          string        // ""
-	ConfigPath          string        // "" Will be constructed from ConfigFile
-	WebhookEnabled      bool          // false
-	WebhookURL          string        // ""
-	WebhookEvents       string        // "all"
-	WebhookProvider     string        // "Discord"
-	WebhookEventsParsed []string      // []string{}
-	Whitelist           string        // ""
-	TrustedProxies      string        // ""
-	MDNS                bool          // false
-	Invisible           bool          // false
-	Tunnel              bool          // false
-	DNS                 bool          // false
-	DNSPort             int           // 8053
-	DNSIP               string        // "127.0.0.1"
-	SMTP                bool          // false
-	SMTPPort            int           // 2525
-	SMTPDomain          string        // ""
-	SMB                 bool          // false
-	SMBPort             int           // 445
-	SMBDomain           string        // ""
-	SMBShare            string        // ""
-	SMBWordlist         string        // ""
-	MaxUploadSize       int64         // 0 = unlimited
-	Catcher             bool          // false
-	LDAP                bool          // false
-	LDAPPort            int           // 389
-	LDAPJNDIEnabled     bool          // false — when true, use search baseDN as class name
-	LDAPJNDIBase        string        // "" auto-constructs from IP/port
-	LDAPWordlist        string        // "" optional wordlist path for NTLM hash cracking
-	FTP                 bool          // false
-	FTPPort             int           // 2121
-	FTPSFTPMode         bool          // false
-	FTPKeyFile          string        // ""
-	FTPHostKeyFile      string        // ""
-	TTL                 time.Duration // 0 = disabled, otherwise self-destruct after this duration
-	TUI                 bool          // false — run the interactive terminal dashboard
+	IP                  string            // "0.0.0.0"
+	Port                int               // 8000
+	Webroot             string            // "."
+	SSL                 bool              // false
+	SelfSigned          bool              // false
+	MyKey               string            // ""
+	MyCert              string            // ""
+	MyP12               string            // ""
+	P12NoPass           bool              // false
+	CLI                 bool              // false
+	UploadFolder        string            // ""
+	LetsEncrypt         bool              // false
+	BasicAuth           string            // ""
+	Username            string            // "" will be constructed from BasicAuth
+	Password            string            // "" will be constructed from BasicAuth
+	CertAuth            string            // ""
+	WebDav              bool              // false
+	WebDavPort          int               // 8001
+	UploadOnly          bool              // false
+	ReadOnly            bool              // false
+	NoClipboard         bool              // false
+	NoDelete            bool              // false
+	Verbose             bool              // false
+	Silent              bool              // false
+	DropUser            string            // ""
+	LEEmail             string            // ""
+	LEDomains           string            // ""
+	LEHTTPPort          string            //"80"
+	LETLSPort           string            // "443"
+	Embedded            bool              // false
+	Output              string            // ""
+	ConfigFile          string            // ""
+	ConfigPath          string            // "" Will be constructed from ConfigFile
+	WebhookEnabled      bool              // false
+	WebhookURL          string            // ""
+	WebhookEvents       string            // "all"
+	WebhookProvider     string            // "Discord"
+	WebhookEventsParsed []string          // []string{}
+	Whitelist           string            // ""
+	TrustedProxies      string            // ""
+	MDNS                bool              // false
+	Invisible           bool              // false
+	Tunnel              bool              // false
+	DNS                 bool              // false
+	DNSPort             int               // 8053
+	DNSIP               string            // "127.0.0.1"
+	SMTP                bool              // false
+	SMTPPort            int               // 2525
+	SMTPDomain          string            // ""
+	SMB                 bool              // false
+	SMBPort             int               // 445
+	SMBDomain           string            // ""
+	SMBShare            string            // ""
+	SMBWordlist         string            // ""
+	MaxUploadSize       int64             // 0 = unlimited
+	Catcher             bool              // false
+	LDAP                bool              // false
+	LDAPPort            int               // 389
+	LDAPJNDIEnabled     bool              // false — when true, use search baseDN as class name
+	LDAPJNDIBase        string            // "" auto-constructs from IP/port
+	LDAPWordlist        string            // "" optional wordlist path for NTLM hash cracking
+	FTP                 bool              // false
+	FTPPort             int               // 2121
+	FTPSFTPMode         bool              // false
+	FTPKeyFile          string            // ""
+	FTPHostKeyFile      string            // ""
+	TTL                 time.Duration     // 0 = disabled, otherwise self-destruct after this duration
+	TUI                 bool              // false — run the interactive terminal dashboard
+	Template            bool              // false — enable ?tpl payload templating
+	TemplateVars        []string          // raw KEY=VALUE entries from --tpl-var / config
+	TemplateVarsParsed  map[string]string // parsed in sanity.FurtherProcessing
+}
+
+// stringSliceFlag collects a repeatable string flag (e.g. --tpl-var KEY=VALUE).
+type stringSliceFlag []string
+
+func (s *stringSliceFlag) String() string { return strings.Join(*s, ",") }
+
+func (s *stringSliceFlag) Set(v string) error {
+	*s = append(*s, v)
+	return nil
 }
 
 func Parse() (*Options, bool) {
@@ -201,6 +214,9 @@ func Parse() (*Options, bool) {
 	flag.StringVar(&opts.FTPHostKeyFile, "ftp-host-keyfile", "", "")
 	flag.DurationVar(&opts.TTL, "ttl", 0, "Self-destruct: shut down automatically after this duration (e.g. 30m, 2h); 0 disables")
 	flag.BoolVar(&opts.TUI, "tui", false, "Run the interactive terminal dashboard")
+	flag.BoolVar(&opts.Template, "template", false, "Enable ?tpl payload templating in served files")
+	var tplVars stringSliceFlag
+	flag.Var(&tplVars, "tpl-var", "Template variable KEY=VALUE (repeatable), e.g. LPORT=4444")
 
 	// One-shot flags
 	upd := flag.Bool("update", false, "update")
@@ -214,6 +230,9 @@ func Parse() (*Options, bool) {
 	flag.Usage = usage()
 
 	flag.Parse()
+
+	// Collect repeatable template variables.
+	opts.TemplateVars = []string(tplVars)
 
 	// Check and execute one-shot functions and execute -> early exit
 	oneShotFunctions(upd, hash, hashLong, version, comp)
@@ -325,6 +344,11 @@ Webhook options:
   -Wp, --webhook-provider   Webhook provider
                             [Discord, Mattermost, Slack]                (default: Discord)
 
+Payload templating:
+      --template      Render {{.VAR}} placeholders in files requested with ?tpl (default: false)
+      --tpl-var       Template variable KEY=VALUE (repeatable), e.g. LPORT=4444
+                      LHOST defaults to -i when a single IP is bound; on 0.0.0.0 pass --tpl-var LHOST=
+
 Misc options:
   -C  --config        Provide config file path                (default: false)
   -P  --print-config  Print sample config to STDOUT           (default: false)
@@ -350,6 +374,7 @@ Usage examples:
   Start with basic auth bcrypt hash:   	./goshs -b 'secret-user:$2a$14$ydRJ//Ob4SctB/D7o.rvU.LmPs/vwXkeXCbtpCqzgOJDSShLgiY52'
   Start with basic auth empty user:	./goshs -b ':$up3r$3cur3'
   Start with cli enabled:           	./goshs -b 'secret-user:$up3r$3cur3' -s -ss -c
+  Start with payload templating:    	./goshs -i 10.10.14.7 --template --tpl-var LPORT=4444
 
 `, goshsversion.GoshsVersion, os.Args[0])
 	}

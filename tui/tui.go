@@ -1370,6 +1370,22 @@ func (m *model) statusSegments() []string {
 	if o.Catcher {
 		add("🐚 catcher")
 	}
+	if o.Template {
+		tpl := "🧩 tpl"
+		// Mirror the server's LHOST resolution: explicit --tpl-var wins, else the
+		// bound single IP, else unset (templates using {{.LHOST}} will error).
+		lhost := o.TemplateVarsParsed["LHOST"]
+		if lhost == "" && o.IP != "" && o.IP != "0.0.0.0" {
+			lhost = o.IP
+		}
+		if lhost != "" {
+			tpl += " LHOST=" + lhost
+		}
+		if lport := o.TemplateVarsParsed["LPORT"]; lport != "" {
+			tpl += " LPORT=" + lport
+		}
+		add(tpl)
+	}
 	return seg
 }
 

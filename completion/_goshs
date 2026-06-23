@@ -21,6 +21,8 @@ _goshs() {
         '(-I --invisible)'{-I,--invisible}'[Invisible mode]' \
         '--ttl[Self-destruct after this duration (e.g. 30m, 2h; 0 disables)]:duration' \
         '--tui[Run the interactive terminal dashboard]' \
+        '--template[Enable ?tpl payload templating in served files]' \
+        '*--tpl-var[Template variable KEY=VALUE (repeatable), e.g. LPORT=4444]:keyvalue' \
         '(-c --cli)'{-c,--cli}'[Enable CLI (requires auth and TLS)]' \
         '--catcher[Enable reverse shell catcher]' \
         '(-e --embedded)'{-e,--embedded}'[Show embedded files in UI]' \

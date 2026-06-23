@@ -90,6 +90,22 @@ func Check(opts *options.Options) (*options.Options, error) {
 		logger.Fatal("The self-destruct timer (--ttl) cannot be negative.")
 	}
 
+	// Payload templating needs a source for {{.LHOST}}: either a single bound IP
+	// (-i) or an explicit --tpl-var LHOST=. Warn (not fatal) so templates that do
+	// not reference LHOST still work.
+	if opts.Template {
+		hasLHOST := false
+		for _, kv := range opts.TemplateVars {
+			if strings.HasPrefix(kv, "LHOST=") {
+				hasLHOST = true
+				break
+			}
+		}
+		if !hasLHOST && (opts.IP == "" || opts.IP == "0.0.0.0") {
+			logger.Warn("--template is enabled but no LHOST source: bind a single IP with -i or pass --tpl-var LHOST=...; {{.LHOST}} templates will error until set.")
+		}
+	}
+
 	// Sanity check either user:pass or keyfile when using sftp mode
 	if opts.FTP && opts.FTPSFTPMode && (opts.BasicAuth == "" && opts.FTPKeyFile == "") {
 		logger.Fatal("When using SFTP you need to either specify an authorized keyfile using -fkf or username and password using -b")
@@ -114,6 +130,18 @@ func Check(opts *options.Options) (*options.Options, error) {
 }
 
 func FurtherProcessing(opts *options.Options) (*options.Options, error) {
+	// Parse repeatable --tpl-var KEY=VALUE entries (from CLI or config) into a map.
+	// Runs here so both the CLI flags and config-file values are merged in first.
+	opts.TemplateVarsParsed = make(map[string]string)
+	for _, kv := range opts.TemplateVars {
+		key, val, ok := strings.Cut(kv, "=")
+		if !ok || key == "" {
+			logger.Warnf("ignoring malformed --tpl-var %q (expected KEY=VALUE)", kv)
+			continue
+		}
+		opts.TemplateVarsParsed[key] = val
+	}
+
 	// check for basic auth
 	if opts.BasicAuth != "" {
 		auth := strings.SplitN(opts.BasicAuth, ":", 2)

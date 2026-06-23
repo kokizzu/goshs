@@ -88,6 +88,8 @@ type Config struct {
 	FTPHostKeyFile      string   `json:"ftp_host_keyfile"`
 	TTL                 int      `json:"ttl"`
 	TUI                 bool     `json:"tui"`
+	Template            bool     `json:"template"`
+	TemplateVars        []string `json:"template_vars"`
 }
 
 func LoadConfig(opts *options.Options) (*options.Options, error) {
@@ -172,6 +174,8 @@ func LoadConfig(opts *options.Options) (*options.Options, error) {
 	opts.FTPHostKeyFile = cfg.FTPHostKeyFile
 	opts.TTL = time.Duration(cfg.TTL) * time.Second
 	opts.TUI = cfg.TUI
+	opts.Template = cfg.Template
+	opts.TemplateVars = cfg.TemplateVars
 
 	// Default upload folder to webroot if not set in config
 	if opts.UploadFolder == "" {
@@ -245,6 +249,8 @@ func PrintExample() (string, error) {
 		FTPHostKeyFile:      "",
 		TTL:                 0,
 		TUI:                 false,
+		Template:            false,
+		TemplateVars:        []string{},
 	}
 
 	b, err := json.MarshalIndent(defaultConfig, "", "  ")
