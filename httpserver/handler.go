@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"bytes"
 	"crypto/subtle"
 	"encoding/json"
 	"fmt"
@@ -40,12 +41,10 @@ func (fs *FileServer) embedded(w http.ResponseWriter, req *http.Request) error {
 	// Get mimetype from extension
 	contentType := utils.MimeByExtension(path)
 
-	// Set mimetype and deliver to browser
-	w.Header().Add("Content-Type", contentType)
-	if _, err := w.Write(embeddedFile); err != nil {
-		logger.Errorf("Error writing response to browser: %+v", err)
-		return err
-	}
+	// Set mimetype and deliver to browser. http.ServeContent adds Range support;
+	// the embedded bytes are seekable via bytes.Reader.
+	w.Header().Set("Content-Type", contentType)
+	http.ServeContent(w, req, filepath.Base(path), time.Time{}, bytes.NewReader(embeddedFile))
 
 	return nil
 }
@@ -72,9 +71,7 @@ func (fs *FileServer) conPtyShell(w http.ResponseWriter, req *http.Request) {
 	local := filepath.Join(fs.Webroot, "ConPtyShell.ps1")
 	if data, err := os.ReadFile(local); err == nil {
 		logger.Infof("serving ConPtyShell.ps1 from webroot: %s", local)
-		if _, err := w.Write(data); err != nil {
-			logger.Errorf("Error writing response to browser: %+v", err)
-		}
+		http.ServeContent(w, req, "ConPtyShell.ps1", time.Time{}, bytes.NewReader(data))
 		body := fs.emitCollabEvent(req, http.StatusOK)
 		logger.LogRequest(req, http.StatusOK, fs.Verbose, fs.Webhook, body)
 		return
@@ -87,9 +84,7 @@ func (fs *FileServer) conPtyShell(w http.ResponseWriter, req *http.Request) {
 		fs.handleError(w, req, fmt.Errorf("ConPtyShell.ps1 unavailable: %w", err), http.StatusBadGateway)
 		return
 	}
-	if _, err := w.Write(data); err != nil {
-		logger.Errorf("Error writing response to browser: %+v", err)
-	}
+	http.ServeContent(w, req, "ConPtyShell.ps1", time.Time{}, bytes.NewReader(data))
 	body := fs.emitCollabEvent(req, http.StatusOK)
 	logger.LogRequest(req, http.StatusOK, fs.Verbose, fs.Webhook, body)
 }
@@ -129,16 +124,17 @@ func (fs *FileServer) static(w http.ResponseWriter, req *http.Request) {
 	staticFile, err := static.ReadFile(path)
 	if err != nil {
 		logger.Errorf("static file: %+v cannot be loaded: %+v", path, err)
+		http.NotFound(w, req)
+		return
 	}
 
 	// Get mimetype from extension
 	contentType := utils.MimeByExtension(path)
 
-	// Set mimetype and deliver to browser
-	w.Header().Add("Content-Type", contentType)
-	if _, err := w.Write(staticFile); err != nil {
-		logger.Errorf("Error writing response to browser: %+v", err)
-	}
+	// Set mimetype and deliver to browser. http.ServeContent adds Range support;
+	// the embedded bytes are seekable via bytes.Reader.
+	w.Header().Set("Content-Type", contentType)
+	http.ServeContent(w, req, filepath.Base(path), time.Time{}, bytes.NewReader(staticFile))
 }
 
 func (fs *FileServer) doDir(file *os.File, w http.ResponseWriter, req *http.Request, upath string, json bool) {
@@ -803,39 +799,36 @@ func (fs *FileServer) sendFile(w http.ResponseWriter, req *http.Request, file *o
 		return
 	}
 
-	// Extract download parameter
-	download := req.URL.Query()
-	if _, ok := download["download"]; ok {
-		stat, err := file.Stat()
-		if err != nil {
-			logger.Errorf("reading file stats for download: %+v", err)
-		}
-		contentDisposition := fmt.Sprintf("attachment; filename=\"%s\"; modification-date=\"%s\"", stat.Name(), stat.ModTime().Format(time.RFC1123Z))
-		// Handle as download
-		w.Header().Add("Content-Type", "application/octet-stream")
-		w.Header().Add("Content-Disposition", contentDisposition)
-		w.Header().Add("Content-Length", fmt.Sprintf("%d", stat.Size()))
-		if _, err := io.Copy(w, file); err != nil {
-			logger.Errorf("Error writing response to browser: %+v", err)
-		}
-
-		// Send webhook message
-		logger.HandleWebhookSend(fmt.Sprintf("[WEB] File downloaded: %s", filepath.Join(fs.Webroot, req.URL.Path)), "download", fs.Webhook)
-
-	} else {
-		// Write to browser
-		stat, _ := file.Stat()
-		filename := stat.Name()
-		contentType := utils.MimeByExtension(filename)
-		w.Header().Add("Content-Type", contentType)
-		w.Header().Add("Last-Modified", stat.ModTime().UTC().Format("Mon, 02 Jan 2006 15:04:05 GMT"))
-		if _, err := io.Copy(w, file); err != nil {
-			logger.Errorf("Error writing response to browser: %+v", err)
-		}
-
-		// Send webhook message
-		logger.HandleWebhookSend(fmt.Sprintf("[WEB] File viewed: %s", filepath.Join(fs.Webroot, req.URL.Path)), "view", fs.Webhook)
+	stat, err := file.Stat()
+	if err != nil {
+		fs.handleError(w, req, err, http.StatusInternalServerError)
+		return
 	}
+
+	// Set the content type and (for downloads) the disposition before serving.
+	// http.ServeContent honours a pre-set Content-Type, so this preserves the
+	// previous behaviour while it transparently adds HTTP Range support.
+	_, isDownload := req.URL.Query()["download"]
+	if isDownload {
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Header().Set("Content-Disposition",
+			fmt.Sprintf("attachment; filename=\"%s\"; modification-date=\"%s\"", stat.Name(), stat.ModTime().Format(time.RFC1123Z)))
+	} else {
+		w.Header().Set("Content-Type", utils.MimeByExtension(stat.Name()))
+	}
+
+	// http.ServeContent handles Range / If-Range / If-Modified-Since requests
+	// (206 Partial Content, 304 Not Modified), HEAD, Content-Length,
+	// Last-Modified and Accept-Ranges — enabling resumable and seekable
+	// downloads. The *os.File is the required io.ReadSeeker.
+	http.ServeContent(w, req, stat.Name(), stat.ModTime(), file)
+
+	// Send webhook message
+	event, verb := "view", "viewed"
+	if isDownload {
+		event, verb = "download", "downloaded"
+	}
+	logger.HandleWebhookSend(fmt.Sprintf("[WEB] File %s: %s", verb, filepath.Join(fs.Webroot, req.URL.Path)), event, fs.Webhook)
 }
 
 // socket will handle the socket connection
@@ -1212,11 +1205,9 @@ func (fs *FileServer) handleSMTPAttachment(w http.ResponseWriter, r *http.Reques
 	safeName := strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(a.Filename)
 	w.Header().Set("Content-Type", a.ContentType)
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, safeName))
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", a.Size))
-	_, err := w.Write(a.Data)
-	if err != nil {
-		logger.Error(err)
-	}
+	// http.ServeContent adds Range support (resumable downloads of captured
+	// attachments, which may be large) and sets Content-Length itself.
+	http.ServeContent(w, r, a.Filename, a.StoredAt, bytes.NewReader(a.Data))
 }
 
 func (fs *FileServer) handleCatcherAPI(w http.ResponseWriter, req *http.Request, action string) {

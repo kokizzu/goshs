@@ -478,3 +478,25 @@ func TestHandleSMTPAttachment_Found(t *testing.T) {
 	require.Equal(t, "application/pdf", w.Header().Get("Content-Type"))
 	require.Equal(t, "PDF content", w.Body.String())
 }
+
+// Captured attachments can be large, so the download path supports HTTP Range
+// (resumable downloads) via http.ServeContent.
+func TestHandleSMTPAttachment_Range(t *testing.T) {
+	root := t.TempDir()
+	fs, cleanup := newTestFileServer(t, root)
+	defer cleanup()
+
+	id := "test-attach-range"
+	smtpattach.Save(id, "dump.bin", "application/octet-stream", []byte("0123456789"))
+
+	r := httptest.NewRequest(http.MethodGet, "/?smtp&id="+id, nil)
+	r.Header.Set("Range", "bytes=2-5")
+	w := httptest.NewRecorder()
+
+	fs.handleSMTPAttachment(w, r)
+
+	require.Equal(t, http.StatusPartialContent, w.Code)
+	require.Equal(t, "bytes 2-5/10", w.Header().Get("Content-Range"))
+	require.Equal(t, "2345", w.Body.String())
+	require.Contains(t, w.Header().Get("Content-Disposition"), "attachment")
+}
