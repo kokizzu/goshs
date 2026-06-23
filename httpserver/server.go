@@ -219,7 +219,7 @@ func (fs *FileServer) SetupMux(mux *CustomMux, what string) string {
 		mux.Use(fs.ServerHeaderMiddleware)
 
 		wdHandler := &webdav.Handler{
-			FileSystem: webdav.Dir(fs.Webroot),
+			FileSystem: fs.newWebdavFileSystem(),
 			LockSystem: webdav.NewMemLS(),
 			Logger: func(r *http.Request, e error) {
 				if e != nil && r.Method != "PROPFIND" {
@@ -252,7 +252,14 @@ func (fs *FileServer) SetupMux(mux *CustomMux, what string) string {
 					return
 				}
 			}
-			wdHandler.ServeHTTP(w, r)
+			// Enforce the .goshs ACL on the addressed resource (proper 401 with
+			// a challenge), then hand the request to the ACL-aware FileSystem via
+			// the context so recursive PROPFIND walks stay filtered too.
+			if !fs.webdavEnforceACL(w, r) {
+				return
+			}
+			ctx := context.WithValue(r.Context(), webdavCtxKey{}, r)
+			wdHandler.ServeHTTP(w, r.WithContext(ctx))
 		})
 
 		// Check Basic Auth and use middleware
