@@ -9,6 +9,12 @@ Source0:        %{url}/archive/refs/tags/v%{version}.tar.gz#/%{name}-%{version}.
 
 BuildRequires:  golang
 
+# The binary is built with `-ldflags=-s -w`, which strips all symbol and
+# DWARF debug info. There is therefore nothing for Fedora's automatic
+# debuginfo/debugsource extraction to collect, which otherwise fails the
+# build with an "Empty %%files file debugsourcefiles.list" error.
+%global debug_package %{nil}
+
 %description
 A single-binary file server for pentesters, CTF players, and sysadmins.
 
