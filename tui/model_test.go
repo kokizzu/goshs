@@ -31,6 +31,38 @@ func newTestModel() *model {
 
 func row(s string) eventRow { return eventRow{summary: s} }
 
+// tplSegment returns the "🧩 tpl" status segment, or "" if absent.
+func tplSegment(m *model) string {
+	for _, s := range m.statusSegments() {
+		if strings.HasPrefix(s, "🧩 tpl") {
+			return s
+		}
+	}
+	return ""
+}
+
+// statusSegments must surface every --tpl-var, not just LHOST/LPORT, so the TUI
+// status line matches the server's template context (regression for arbitrary
+// --tpl-var KEY=VALUE entries being dropped).
+func TestStatusSegmentsShowsArbitraryTplVars(t *testing.T) {
+	m := &model{opts: &options.Options{
+		IP:       "10.0.0.5",
+		Port:     8080,
+		Webroot:  "/srv",
+		Template: true,
+		TemplateVarsParsed: map[string]string{
+			"LPORT": "4444",
+			"FOO":   "BAR",
+		},
+	}}
+	got := tplSegment(m)
+	for _, want := range []string{"LHOST=10.0.0.5", "LPORT=4444", "FOO=BAR"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("tpl segment %q missing %q", got, want)
+		}
+	}
+}
+
 func TestAddRowNewestFirst(t *testing.T) {
 	m := newTestModel()
 	m.addRow(paneHTTP, row("first"))

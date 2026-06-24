@@ -1381,8 +1381,19 @@ func (m *model) statusSegments() []string {
 		if lhost != "" {
 			tpl += " LHOST=" + lhost
 		}
-		if lport := o.TemplateVarsParsed["LPORT"]; lport != "" {
-			tpl += " LPORT=" + lport
+		// Show every other --tpl-var (LPORT and any arbitrary KEY=VALUE) so the
+		// status line reflects the full template context, not just LHOST. LHOST is
+		// handled above (it has extra IP-derivation logic), so skip it here.
+		keys := make([]string, 0, len(o.TemplateVarsParsed))
+		for k := range o.TemplateVarsParsed {
+			if k == "LHOST" {
+				continue
+			}
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			tpl += fmt.Sprintf(" %s=%s", k, o.TemplateVarsParsed[k])
 		}
 		add(tpl)
 	}
