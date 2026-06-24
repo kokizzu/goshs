@@ -123,6 +123,7 @@ const (
 	paneLDAP
 	paneSMTP
 	paneShells
+	paneGenerator
 	paneClipboard
 )
 
@@ -151,6 +152,14 @@ type model struct {
 	inputBuf    string               // text typed so far in input mode
 	inputPrompt string               // label shown in the status bar while typing
 	inputSubmit func(string) tea.Cmd // invoked with the trimmed buffer on enter
+
+	// Reverse-shell generator state (GENERATOR pane). Mirrors the web UI
+	// catcher generator: a selected payload template plus LHOST/LPORT and an
+	// output encoding, all editable in place.
+	genSel  int      // index into shellDB of the selected payload
+	genIP   string   // LHOST substituted into the template
+	genPort string   // LPORT substituted into the template
+	genEnc  encoding // output encoding (none / url / base64)
 }
 
 func newModel(opts *options.Options, hub *ws.Hub, mgr *catcher.Manager, sub chan []byte, clip *clipboard.Clipboard, tunnelURL func() string, ttlC <-chan time.Time) *model {
@@ -167,6 +176,8 @@ func newModel(opts *options.Options, hub *ws.Hub, mgr *catcher.Manager, sub chan
 		tunnelURL: tunnelURL,
 		ttl:       ttlC,
 		deadline:  deadline,
+		genIP:     defaultLHOST(opts),
+		genPort:   "4444",
 		panes: []*pane{
 			{name: "HTTP", icon: "🌐"},
 			{name: "DNS", icon: "📡"},
@@ -174,9 +185,20 @@ func newModel(opts *options.Options, hub *ws.Hub, mgr *catcher.Manager, sub chan
 			{name: "LDAP", icon: "📇"},
 			{name: "SMTP", icon: "📨"},
 			{name: "SHELLS", icon: "🐚"},
+			{name: "GENERATOR", icon: "⚡"},
 			{name: "CLIPBOARD", icon: "📋"},
 		},
 	}
+}
+
+// defaultLHOST picks a sensible LHOST for the generator: the bound IP when it is
+// a concrete address, mirroring the server's --tpl-var LHOST derivation; a
+// placeholder otherwise (e.g. when bound to 0.0.0.0) so the operator can edit it.
+func defaultLHOST(opts *options.Options) string {
+	if opts.IP != "" && opts.IP != "0.0.0.0" {
+		return opts.IP
+	}
+	return "10.10.10.10"
 }
 
 func (m *model) Init() tea.Cmd {
@@ -231,6 +253,14 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// driving navigation.
 	if m.inputActive {
 		return m.handleInputKey(msg)
+	}
+	// The GENERATOR pane is a form, not an event log, so it owns selection and
+	// edit keys; only keys it does not handle (pane switching, quit) fall
+	// through to the shared navigation below.
+	if m.active == paneGenerator {
+		if cmd, handled := m.handleGeneratorKey(msg); handled {
+			return m, cmd
+		}
 	}
 	switch msg.String() {
 	case "q", "ctrl+c":
@@ -1222,6 +1252,136 @@ var bannerArt = []string{
 	` |___/`,
 }
 
+// --- generator --------------------------------------------------------------
+
+// handleGeneratorKey processes keys specific to the GENERATOR pane and reports
+// whether it consumed the event. Unhandled keys (tab/shift+tab, q, E, ...)
+// return handled=false so the shared handler still drives pane switching,
+// quitting and export-all.
+func (m *model) handleGeneratorKey(msg tea.KeyMsg) (tea.Cmd, bool) {
+	switch msg.String() {
+	case "up", "k":
+		if m.genSel > 0 {
+			m.genSel--
+		}
+	case "down", "j":
+		if m.genSel < len(shellDB)-1 {
+			m.genSel++
+		}
+	case "home", "g":
+		m.genSel = 0
+	case "end", "G":
+		m.genSel = len(shellDB) - 1
+	case "i":
+		m.beginInput("set LHOST", func(text string) tea.Cmd {
+			if text != "" {
+				m.genIP = text
+			}
+			return nil
+		})
+	case "p":
+		m.beginInput("set LPORT", func(text string) tea.Cmd {
+			if text != "" {
+				m.genPort = text
+			}
+			return nil
+		})
+	case "n":
+		m.genEnc = m.genEnc.next()
+	case "enter", "e":
+		// The form has no detail view and no per-pane log to export; swallow
+		// these so ⏎ does not toggle detail and e does not write an empty file.
+	default:
+		return nil, false
+	}
+	return nil, true
+}
+
+// generatorView renders the GENERATOR pane: a selectable payload list on the
+// left and the editable LHOST/LPORT/encoding fields plus the filled command and
+// listener line on the right, in exactly h lines.
+func (m *model) generatorView(h int) string {
+	if len(shellDB) == 0 {
+		return padLines(nil, h)
+	}
+	leftW := 26
+	if max := m.width - 20; leftW > max {
+		leftW = max
+	}
+	if leftW < 10 {
+		leftW = 10
+	}
+	rightW := m.width - leftW - 1
+	if rightW < 1 {
+		rightW = 1
+	}
+	left := m.generatorList(leftW, h)
+	right := m.generatorOutput(rightW, h)
+	return lipgloss.JoinHorizontal(lipgloss.Top, left, sepColumn(h), right)
+}
+
+// generatorList renders the scrollable list of payload names, windowed so the
+// selected entry stays visible, as exactly h lines of width w.
+func (m *model) generatorList(w, h int) string {
+	top := 0
+	if m.genSel >= h {
+		top = m.genSel - h + 1
+	}
+	end := top + h
+	if end > len(shellDB) {
+		end = len(shellDB)
+	}
+	var lines []string
+	for i := top; i < end; i++ {
+		marker, st := "  ", lipgloss.NewStyle().Foreground(lipgloss.Color(nord4))
+		if i == m.genSel {
+			marker, st = "▶ ", selectedStyle
+		}
+		lines = append(lines, st.Width(w).Render(trunc(marker+shellDB[i].name, w)))
+	}
+	blank := lipgloss.NewStyle().Width(w).Render("")
+	for len(lines) < h {
+		lines = append(lines, blank)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// generatorOutput renders the right-hand panel: the LHOST/LPORT/encoding fields,
+// the selected payload's name, the filled command (hard-wrapped), and the
+// matching listener command, as exactly h lines of width w.
+func (m *model) generatorOutput(w, h int) string {
+	e := shellDB[m.genSel]
+	cmd := generateCommand(e.tmpl, m.genIP, m.genPort, m.genEnc)
+
+	field := func(k, v string) string { return dimStyle.Render(padRight(k, 7)) + trunc(v, w-7) }
+	enc := m.genEnc.String()
+	if strings.HasPrefix(e.tmpl, psB64Prefix) {
+		enc = "powershell -e (encoding ignored)"
+	}
+
+	lines := []string{
+		field("LHOST", m.genIP),
+		field("LPORT", m.genPort),
+		field("ENC", enc),
+		"",
+		titleStyle.Render(trunc("⚡ "+e.name, w)),
+		"",
+	}
+	lines = append(lines, strings.Split(hardWrap(cmd, w), "\n")...)
+	lines = append(lines, "", dimStyle.Render(trunc("Listener: nc -lvnp "+m.genPort, w)))
+	return padLines(lines, h)
+}
+
+// sepColumn renders a 1-column vertical divider h lines tall.
+func sepColumn(h int) string {
+	line := dimStyle.Render("│")
+	lines := make([]string, h)
+	for i := range lines {
+		lines[i] = line
+	}
+	return strings.Join(lines, "\n")
+}
+
 func (m *model) View() string {
 	if m.width == 0 || m.height == 0 {
 		return "starting goshs dashboard..."
@@ -1259,7 +1419,11 @@ func (m *model) banner() string {
 func (m *model) tabs() string {
 	var cells []string
 	for i, p := range m.panes {
+		// The GENERATOR pane is a form, not an event log, so it carries no count.
 		label := fmt.Sprintf("%s %s(%d)", p.icon, p.name, len(p.rows))
+		if i == paneGenerator {
+			label = fmt.Sprintf("%s %s", p.icon, p.name)
+		}
 		if i == m.active {
 			cells = append(cells, tabActive.Render(label))
 		} else {
@@ -1420,6 +1584,8 @@ func (m *model) controlsHint() string {
 		return "↑↓ event · PgUp/PgDn scroll · g/G newest/oldest · e/E export · esc close · q quit"
 	}
 	switch m.active {
+	case paneGenerator:
+		return "⇄ Tab/←→ panes · ↑↓ shell · i LHOST · p LPORT · n encoding · q quit"
 	case paneClipboard:
 		return "⇄ Tab/←→ panes · ↑↓ scroll · ⏎ view · a add · d delete · C clear · e export · q quit"
 	case paneShells:
@@ -1434,6 +1600,9 @@ func (m *model) controlsHint() string {
 // pinned to the bottom of the screen. The list view gets a vertical scrollbar
 // in the rightmost column whenever the events overflow the viewport.
 func (m *model) bodyView(h int) string {
+	if m.active == paneGenerator {
+		return m.generatorView(h)
+	}
 	p := m.panes[m.active]
 	if m.detail {
 		return m.detailView(p, h)
