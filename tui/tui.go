@@ -24,8 +24,10 @@ import (
 	"goshs.de/goshs/v2/catcher"
 	"goshs.de/goshs/v2/clipboard"
 	"goshs.de/goshs/v2/goshsversion"
+	"goshs.de/goshs/v2/logger"
 	"goshs.de/goshs/v2/options"
 	"goshs.de/goshs/v2/smtpattach"
+	"goshs.de/goshs/v2/utils"
 	"goshs.de/goshs/v2/ws"
 )
 
@@ -1470,7 +1472,25 @@ func (m *model) statusSegments() []string {
 	add := func(s string) { seg = append(seg, s) }
 
 	add("🏷 " + goshsversion.GoshsVersion)
-	add(fmt.Sprintf("🔗 %s://%s:%d", scheme, o.IP, o.Port))
+	// If o.IP is '0.0.0.0', resolve to all ip addresses and show all, sort by interface name
+	if o.IP == "0.0.0.0" {
+		interfaceAdresses, err := utils.GetAllIPAddresses()
+		if err != nil {
+			logger.Errorf("There has been an error fetching the interface addresses: %+v\n", err)
+		}
+		// Sort interface addresses by interface name
+		keys := make([]string, 0, len(interfaceAdresses))
+		for k := range interfaceAdresses {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			v := interfaceAdresses[k]
+			add(fmt.Sprintf("🔗 %s://%s:%d (%s)", scheme, v, o.Port, k))
+		}
+	} else {
+		add(fmt.Sprintf("🔗 %s://%s:%d", scheme, o.IP, o.Port))
+	}
 	add("📁 " + o.Webroot)
 	if o.UploadFolder != "" && o.UploadFolder != o.Webroot {
 		add("📥 " + o.UploadFolder)
