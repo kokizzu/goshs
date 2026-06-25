@@ -16,4 +16,10 @@ unit.out
 integration.out
 *.pcapng
 *.pdml
-.claude/
+# Ignore .claude by default (keeps settings.local.json and local cruft out of git),
+# but track the shared rule docs so they sync across systems.
+.claude/*
+!.claude/rules/
+.claude/rules/*
+!.claude/rules/architecture.md
+!.claude/rules/ghfs.md
