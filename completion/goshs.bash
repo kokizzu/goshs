@@ -16,6 +16,7 @@ _goshs() {
 -p12 --pkcs12 -p12np --p12-no-pass -sl --lets-encrypt \
 -sld --le-domains -sle --le-email -slh --le-http -slt --le-tls \
 -ftp --ftp-port --ftp-sftp -fkf --ftp-keyfile -fhk --ftp-host-keyfile \
+-tftp --tftp-server --tftp-port \
 -smb -smb-port -smb-domain -smb-share -smb-wordlist \
 -ldap -ldap-port -ldap-jndi -ldap-jndi-base -ldap-wordlist \
 -b --basic-auth -ca --cert-auth -H --hash \

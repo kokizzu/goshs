@@ -45,6 +45,8 @@ _goshs() {
         '--ftp-sftp[Use SFTP instead of plain FTP]' \
         '(-fkf --ftp-keyfile)'{-fkf,--ftp-keyfile}'[Authorized_keys file]:file:_files' \
         '(-fhk --ftp-host-keyfile)'{-fhk,--ftp-host-keyfile}'[SSH host key file]:file:_files' \
+        '(-tftp --tftp-server)'{-tftp,--tftp-server}'[Activate TFTP server]' \
+        '--tftp-port[TFTP port (default: 69)]:port' \
         '-smb[Activate SMB server]' \
         '-smb-port[SMB port (default: 445)]:port' \
         '--smb-port[SMB port]:port' \

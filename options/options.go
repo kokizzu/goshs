@@ -83,6 +83,8 @@ type Options struct {
 	FTPSFTPMode         bool              // false
 	FTPKeyFile          string            // ""
 	FTPHostKeyFile      string            // ""
+	TFTP                bool              // false
+	TFTPPort            int               // 69
 	TTL                 time.Duration     // 0 = disabled, otherwise self-destruct after this duration
 	TUI                 bool              // false — run the interactive terminal dashboard
 	Template            bool              // false — enable ?tpl payload templating
@@ -212,6 +214,9 @@ func Parse() (*Options, bool) {
 	flag.StringVar(&opts.FTPKeyFile, "ftp-keyfile", "", "")
 	flag.StringVar(&opts.FTPHostKeyFile, "fhk", "", "")
 	flag.StringVar(&opts.FTPHostKeyFile, "ftp-host-keyfile", "", "")
+	flag.BoolVar(&opts.TFTP, "tftp", false, "Enable TFTP server")
+	flag.BoolVar(&opts.TFTP, "tftp-server", false, "Enable TFTP server")
+	flag.IntVar(&opts.TFTPPort, "tftp-port", 69, "TFTP server port")
 	flag.DurationVar(&opts.TTL, "ttl", 0, "Self-destruct: shut down automatically after this duration (e.g. 30m, 2h); 0 disables")
 	flag.BoolVar(&opts.TUI, "tui", false, "Run the interactive terminal dashboard")
 	flag.BoolVar(&opts.Template, "template", false, "Enable ?tpl payload templating in served files")
@@ -301,6 +306,10 @@ FTP/SFTP server options:
   -ftp-sftp                     Switch to SFTP instead of plain FTP       (default: false)
   -fkf, --ftp-keyfile           Authorized_keys file for SFTP pubkey auth
   -fhk, --ftp-host-keyfile      SSH host key file for SFTP identification
+
+TFTP server options:
+  -tftp, --tftp-server          Activate TFTP server capabilities         (default: false)
+  -tftp-port                    The port TFTP listens on                  (default: 69)
 
 SMB server options:
   -smb                        Activate SMB server capabilities         (default: false)

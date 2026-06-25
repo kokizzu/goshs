@@ -1551,6 +1551,16 @@ func (m *model) statusSegments() []string {
 	if o.LDAP {
 		add(fmt.Sprintf("📇 ldap :%d", o.LDAPPort))
 	}
+	if o.FTP {
+		if o.FTPSFTPMode {
+			add(fmt.Sprintf("📂 sftp :%d", o.FTPPort))
+		} else {
+			add(fmt.Sprintf("📂 ftp :%d", o.FTPPort))
+		}
+	}
+	if o.TFTP {
+		add(fmt.Sprintf("📦 tftp :%d", o.TFTPPort))
+	}
 	if o.Catcher {
 		add("🐚 catcher")
 	}

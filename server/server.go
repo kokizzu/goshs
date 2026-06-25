@@ -14,6 +14,7 @@ import (
 	"goshs.de/goshs/v2/sftpserver"
 	"goshs.de/goshs/v2/smbserver"
 	"goshs.de/goshs/v2/smtpserver"
+	"goshs.de/goshs/v2/tftpserver"
 	"goshs.de/goshs/v2/utils"
 	"goshs.de/goshs/v2/webhook"
 	"goshs.de/goshs/v2/ws"
@@ -86,9 +87,14 @@ func StartAll(opts *options.Options) *Servers {
 		}
 	}
 
+	if opts.TFTP {
+		tftpSrv := tftpserver.NewTFTPServer(opts, wl, *wh)
+		go func() { _ = tftpSrv.Start() }()
+	}
+
 	// Zeroconf mDNS
 	if opts.MDNS {
-		err := utils.RegisterZeroconfMDNS(opts.SSL, opts.Port, opts.WebDav, opts.WebDavPort, opts.SMTP, opts.SMTPPort, opts.DNS, opts.DNSPort, opts.SMB, opts.SMBPort, opts.LDAP, opts.LDAPPort, opts.FTP, opts.FTPSFTPMode, opts.FTPPort)
+		err := utils.RegisterZeroconfMDNS(opts.SSL, opts.Port, opts.WebDav, opts.WebDavPort, opts.SMTP, opts.SMTPPort, opts.DNS, opts.DNSPort, opts.SMB, opts.SMBPort, opts.LDAP, opts.LDAPPort, opts.FTP, opts.FTPSFTPMode, opts.FTPPort, opts.TFTP, opts.TFTPPort)
 		if err != nil {
 			logger.Warnf("error registering zeroconf mDNS: %+v", err)
 		}

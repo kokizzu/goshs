@@ -98,7 +98,7 @@ func GenerateHashedPassword(password []byte) string {
 	return string(bytes)
 }
 
-func RegisterZeroconfMDNS(ssl bool, webPort int, webdav bool, webdavPort int, smtp bool, smtpPort int, dns bool, dnsPort int, smb bool, smbPort int, ldap bool, ldapPort int, ftp bool, ftpSFTPMode bool, ftpPort int) error {
+func RegisterZeroconfMDNS(ssl bool, webPort int, webdav bool, webdavPort int, smtp bool, smtpPort int, dns bool, dnsPort int, smb bool, smbPort int, ldap bool, ldapPort int, ftp bool, ftpSFTPMode bool, ftpPort int, tftp bool, tftpPort int) error {
 	// Register zeroconf mDNS
 	hostname, err := os.Hostname()
 	if err != nil {
@@ -260,6 +260,24 @@ func RegisterZeroconfMDNS(ssl bool, webPort int, webdav bool, webdavPort int, sm
 		defer zeroFTP.Shutdown()
 
 		logger.Infof("mDNS service registered as %s://%s.local:%d", ftpProto, hostname, ftpPort)
+	}
+
+	// Register tftp if enabled
+	if tftp {
+		zeroTFTP, err := zeroconf.Register(
+			"goshs TFTP",
+			"_tftp._udp",
+			"local.",
+			tftpPort,
+			[]string{fmt.Sprintf("host=%s.local", hostname), fmt.Sprintf("version=%s", goshsversion.GoshsVersion)},
+			nil,
+		)
+		if err != nil {
+			return fmt.Errorf("zeroconf mDNS did not register successfully: %+v", err)
+		}
+		defer zeroTFTP.Shutdown()
+
+		logger.Infof("mDNS service registered as tftp://%s.local:%d", hostname, tftpPort)
 	}
 
 	return nil

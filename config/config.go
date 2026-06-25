@@ -86,6 +86,8 @@ type Config struct {
 	FTPSFTPMode         bool     `json:"ftp_sftp_mode"`
 	FTPKeyFile          string   `json:"ftp_keyfile"`
 	FTPHostKeyFile      string   `json:"ftp_host_keyfile"`
+	TFTP                bool     `json:"tftp"`
+	TFTPPort            int      `json:"tftp_port"`
 	TTL                 int      `json:"ttl"`
 	TUI                 bool     `json:"tui"`
 	Template            bool     `json:"template"`
@@ -167,11 +169,14 @@ func LoadConfig(opts *options.Options) (*options.Options, error) {
 	opts.LDAPPort = cfg.LDAPPort
 	opts.LDAPJNDIEnabled = cfg.LDAPJNDIEnabled
 	opts.LDAPJNDIBase = cfg.LDAPJNDIBase
+	opts.LDAPWordlist = cfg.LDAPWordlist
 	opts.FTP = cfg.FTP
 	opts.FTPPort = cfg.FTPPort
 	opts.FTPSFTPMode = cfg.FTPSFTPMode
 	opts.FTPKeyFile = cfg.FTPKeyFile
 	opts.FTPHostKeyFile = cfg.FTPHostKeyFile
+	opts.TFTP = cfg.TFTP
+	opts.TFTPPort = cfg.TFTPPort
 	opts.TTL = time.Duration(cfg.TTL) * time.Second
 	opts.TUI = cfg.TUI
 	opts.Template = cfg.Template
@@ -242,11 +247,14 @@ func PrintExample() (string, error) {
 		LDAPPort:            389,
 		LDAPJNDIEnabled:     false,
 		LDAPJNDIBase:        "",
+		LDAPWordlist:        "",
 		FTP:                 false,
 		FTPPort:             2121,
 		FTPSFTPMode:         false,
 		FTPKeyFile:          "",
 		FTPHostKeyFile:      "",
+		TFTP:                false,
+		TFTPPort:            69,
 		TTL:                 0,
 		TUI:                 false,
 		Template:            false,

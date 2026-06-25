@@ -63,6 +63,28 @@ func TestStatusSegmentsShowsArbitraryTplVars(t *testing.T) {
 	}
 }
 
+// statusSegments must surface the enabled transfer servers (FTP/SFTP/TFTP) so
+// the TUI status line reflects every running protocol, like SMB/DNS/etc.
+func TestStatusSegmentsShowsTransferServers(t *testing.T) {
+	cases := []struct {
+		name string
+		opts *options.Options
+		want string
+	}{
+		{"tftp", &options.Options{Webroot: "/srv", TFTP: true, TFTPPort: 69}, "📦 tftp :69"},
+		{"ftp", &options.Options{Webroot: "/srv", FTP: true, FTPPort: 2121}, "📂 ftp :2121"},
+		{"sftp", &options.Options{Webroot: "/srv", FTP: true, FTPSFTPMode: true, FTPPort: 2121}, "📂 sftp :2121"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			seg := strings.Join((&model{opts: c.opts}).statusSegments(), " ")
+			if !strings.Contains(seg, c.want) {
+				t.Fatalf("status line %q missing %q", seg, c.want)
+			}
+		})
+	}
+}
+
 func TestAddRowNewestFirst(t *testing.T) {
 	m := newTestModel()
 	m.addRow(paneHTTP, row("first"))

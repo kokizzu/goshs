@@ -49,6 +49,9 @@ complete -c goshs -l ftp-port            -d 'FTP port (default: 2121)'
 complete -c goshs -l ftp-sftp            -d 'Use SFTP instead of plain FTP'
 complete -c goshs -l ftp-keyfile         -d 'Authorized_keys file for pubkey auth' -r -F
 complete -c goshs -l ftp-host-keyfile    -d 'SSH host key file' -r -F
+complete -c goshs -l tftp                -d 'Activate TFTP server'
+complete -c goshs -l tftp-server         -d 'Activate TFTP server'
+complete -c goshs -l tftp-port           -d 'TFTP port (default: 69)'
 
 # SMB
 complete -c goshs -l smb                 -d 'Activate SMB server'

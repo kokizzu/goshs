@@ -58,7 +58,8 @@ func Check(opts *options.Options) (*options.Options, error) {
 		opts.SMTP = false
 		opts.LDAP = false
 		opts.FTP = false
-		logger.Warn("Invisible mode activated, disabling FTP/SFTP, WebDAV, silent mode, DNS, SMTP, LDAP and mDNS support")
+		opts.TFTP = false
+		logger.Warn("Invisible mode activated, disabling FTP/SFTP, TFTP, WebDAV, silent mode, DNS, SMTP, LDAP and mDNS support")
 	}
 
 	// Sanity check for upload only vs read only

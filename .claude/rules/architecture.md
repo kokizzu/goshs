@@ -36,6 +36,7 @@ enabled protocol; no per-protocol stop handles). `main.go` orchestrates startup;
 | HTTP(S) file server, upload, listing, preview | `httpserver/` | Core. Templates + static assets embedded (see Assets). Auth, ACL (`.goshs` dirs), bulk zip download. |
 | WebDAV | `httpserver/` (WebDav flag), separate port | `WebDavPort` default 8001 |
 | FTP / SFTP | `ftpserver/`, `sftpserver/` | `FTP`, `FTPSFTPMode`, port 2121 |
+| TFTP (UDP transfer) | `tftpserver/` | `TFTP`, port 69. Hand-rolled, dependency-free (RFC 1350 + blksize/tsize OACK). RRQ download / WRQ upload, octet only, path-traversal-safe, honours whitelist + ReadOnly/UploadOnly. Registered in mDNS (`_tftp._udp`). |
 | SMB (rogue/share + NTLM capture) | `smbserver/` | NTLM hash capture, optional wordlist cracking |
 | SMTP (rogue, attachment capture) | `smtpserver/`, `smtpattach/` | port 2525 |
 | DNS (rogue) | `dnsserver/` | port 8053 |
@@ -59,8 +60,52 @@ enabled protocol; no per-protocol stop handles). `main.go` orchestrates startup;
 Full flag/field list is the source of truth in `options/options.go` (`type Options struct`).
 Repeatable flags use `stringSliceFlag` (e.g. `--tpl-var`).
 
-**Known protocol gap:** TFTP (the one classic transfer protocol not present, given
-HTTP/WebDAV/FTP/SFTP/SMB already exist).
+### CHECKLIST: adding a new flag / protocol / server
+
+A flag or protocol touches **many** places. Missing any of these ships a
+half-wired feature. Use `tftpserver/` (commit that added TFTP) as the reference
+example. Work through **all** of these:
+
+**Core (Go):**
+1. `options/options.go` — add struct field(s); register flag(s) in `Parse()`
+   (give both short + `--long` aliases like the siblings); add a block to the
+   `usage()` help text.
+2. `config/config.go` — add the field to the `Config` struct (with `json:"…"`
+   tag), map it in `LoadConfig` (`opts.X = cfg.X`), and add it to the
+   `PrintExample()` default struct.
+3. `example/goshs.json.example` — add the JSON key(s) with default value(s).
+   (Verify with `go run . -P`.)
+4. For a new server: create the `xserver/` package (`New…Server(opts, …)` +
+   `Start()`), then launch it in `server.StartAll` (`if opts.X { … go srv.Start() }`).
+5. `sanity/checks.go` — if it's a noisy/listening server, disable it in the
+   invisible-mode block (and update that block's log message).
+6. `utils/utils.go` `RegisterZeroconfMDNS(...)` — add a param + a
+   `zeroconf.Register` block for the new service, AND update the **call site** in
+   `server.StartAll` (the arg list is long and positional).
+
+**UI:**
+7. `tui/tui.go` `statusSegments()` — add a segment so the TUI status line shows
+   the server when enabled (the pattern: `if o.X { add("<emoji> name :port") }`).
+   Note: capture protocols (DNS/SMB/LDAP/SMTP) also have dedicated **panes**;
+   transfer protocols (FTP/TFTP) only appear in the status line.
+8. Web UI (`assets/js/src/…`) — only if the feature is web-facing; run
+   `make generate` afterwards.
+
+**Completions (all three):**
+9. `completion/goshs.bash`, `completion/goshs.fish`, `completion/_goshs` (zsh) —
+   add the new flag(s) to each. (These have historically drifted; keep them in
+   sync.)
+
+**External repos (separate GitLab Pages — see Related repositories):**
+10. `goshs-docs` — add/extend a page under `content/usage/<feature>/_index.md`
+    and update the flag reference in `content/usage/_index.md`.
+11. `goshs-landing` — update `hugo.toml` description, plus `layouts/index.html`
+    (meta keywords, the FAQ/answer prose, and the `featureList`).
+
+**Dependencies:** adding a Go module is fine — the COPR build has networking
+enabled and `go mod download` works at build time (see Releases). Choose
+hand-rolling vs. a dependency on normal engineering merits (footprint, quality,
+maintenance), not packaging constraints.
 
 ---
 
@@ -129,16 +174,18 @@ Makefile targets: `generate` (build assets, above), `check` (= `fmt-check` + `ve
 
 - Standard Go build/test: `go build ./...`, `go test ./...`. The `tui` package has a
   full test suite (`go test ./tui/`).
-- `run-unit-no-network` mirrors the network-isolated CI/COPR environment — some tests
-  must work without network access.
+- `run-unit-no-network` runs the unit tests with network access disabled — useful for
+  confirming tests don't depend on outbound connectivity (the COPR build itself now
+  has networking, see Releases).
 - Code must be `gofmt`-clean and pass `go vet`.
 
 ### Releases & packaging
 - Packaging lives in `packaging/` (COPR specs) and `snap/`.
-- **COPR builds run with networking disabled**, so `go mod download` cannot fetch at
-  build time — vendoring / pre-fetched modules matter. (Past failures: empty
-  `debugsourcefiles.list` with `CGO_ENABLED=0` on fedora-rawhide-aarch64; go mod
-  download blocked by network isolation.) Validate spec changes against this constraint.
+- **COPR builds have networking enabled and the debug build disabled.** The spec's
+  `go mod download` step works at build time, so adding new Go dependencies is fine
+  and no vendoring is needed. (This resolved earlier failures — empty
+  `debugsourcefiles.list` with `CGO_ENABLED=0` on fedora-rawhide-aarch64, and
+  `go mod download` blocked by network isolation — which are now historical.)
 
 ---
 
