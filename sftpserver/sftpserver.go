@@ -82,7 +82,7 @@ func (s *SFTPServer) Start() error {
 		sshServer.HostSigners = []ssh.Signer{private}
 	}
 
-	if s.Username != "" && s.Password != "" {
+	if s.Username != "" || s.Password != "" {
 		sshServer.PasswordHandler = func(ctx ssh.Context, password string) bool {
 			return subtle.ConstantTimeCompare([]byte(ctx.User()), []byte(s.Username)) == 1 && subtle.ConstantTimeCompare([]byte(password), []byte(s.Password)) == 1
 		}
