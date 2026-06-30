@@ -1299,27 +1299,34 @@ func (m *model) handleGeneratorKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 	return nil, true
 }
 
-// generatorView renders the GENERATOR pane: a selectable payload list on the
-// left and the editable LHOST/LPORT/encoding fields plus the filled command and
-// listener line on the right, in exactly h lines.
+// generatorView renders the GENERATOR pane: a selectable payload list on top
+// and the editable LHOST/LPORT/encoding fields plus the filled command and
+// listener line below, in exactly h lines. The two are stacked (not columned)
+// so the output rows span the full width and can be cleanly mouse-selected
+// without the terminal's rectangular selection also grabbing the payload list.
 func (m *model) generatorView(h int) string {
 	if len(shellDB) == 0 {
 		return padLines(nil, h)
 	}
-	leftW := 26
-	if max := m.width - 20; leftW > max {
-		leftW = max
+	// Cap the list height so the output (long PowerShell payloads especially)
+	// gets the bulk of the pane; the list windows around the selection so a
+	// short height just scrolls.
+	listH := h / 2
+	if listH > 10 {
+		listH = 10
 	}
-	if leftW < 10 {
-		leftW = 10
+	if listH < 3 {
+		listH = 3
 	}
-	rightW := m.width - leftW - 1
-	if rightW < 1 {
-		rightW = 1
+	sepH := 1
+	outH := h - listH - sepH
+	if outH < 1 {
+		// Pane too short to stack; give everything to the list.
+		return m.generatorList(m.width, h)
 	}
-	left := m.generatorList(leftW, h)
-	right := m.generatorOutput(rightW, h)
-	return lipgloss.JoinHorizontal(lipgloss.Top, left, sepColumn(h), right)
+	list := m.generatorList(m.width, listH)
+	out := m.generatorOutput(m.width, outH)
+	return lipgloss.JoinVertical(lipgloss.Left, list, sepRow(m.width), out)
 }
 
 // generatorList renders the scrollable list of payload names, windowed so the
@@ -1374,14 +1381,12 @@ func (m *model) generatorOutput(w, h int) string {
 	return padLines(lines, h)
 }
 
-// sepColumn renders a 1-column vertical divider h lines tall.
-func sepColumn(h int) string {
-	line := dimStyle.Render("│")
-	lines := make([]string, h)
-	for i := range lines {
-		lines[i] = line
+// sepRow renders a 1-line horizontal divider w columns wide.
+func sepRow(w int) string {
+	if w < 1 {
+		w = 1
 	}
-	return strings.Join(lines, "\n")
+	return dimStyle.Render(strings.Repeat("─", w))
 }
 
 func (m *model) View() string {

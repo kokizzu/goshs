@@ -162,6 +162,38 @@ func TestGeneratorViewRendersFormFields(t *testing.T) {
 	}
 }
 
+// TestGeneratorViewStacksListAboveOutput guards the layout that makes the
+// generated command cleanly selectable: the payload list and the output must be
+// stacked vertically, never sharing a physical row. If they shared a row, the
+// terminal's rectangular mouse selection would grab list text alongside the
+// command.
+func TestGeneratorViewStacksListAboveOutput(t *testing.T) {
+	m := &model{width: 100, genIP: "10.9.8.7", genPort: "1337", genSel: 0}
+	lines := strings.Split(m.generatorView(20), "\n")
+
+	listRow, outRow := -1, -1
+	for i, ln := range lines {
+		if strings.Contains(ln, "▶") {
+			listRow = i
+		}
+		if strings.Contains(ln, "nc -lvnp 1337") {
+			outRow = i
+		}
+		if strings.Contains(ln, "▶") && strings.Contains(ln, "nc -lvnp 1337") {
+			t.Fatalf("list and output share row %d: %q", i, ln)
+		}
+	}
+	if listRow == -1 {
+		t.Fatal("no selected payload row (▶) found")
+	}
+	if outRow == -1 {
+		t.Fatal("no listener output row found")
+	}
+	if listRow >= outRow {
+		t.Fatalf("list row %d should be above output row %d", listRow, outRow)
+	}
+}
+
 func TestGeneratorTabHasNoCount(t *testing.T) {
 	opts := &options.Options{IP: "0.0.0.0", Port: 8000, Webroot: "/srv"}
 	m := newModel(opts, nil, nil, nil, nil, nil, nil)
