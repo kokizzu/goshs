@@ -139,9 +139,47 @@ maintenance), not packaging constraints.
 - Colors use the Nord palette constants (`nord4`, `nord7`, …) — do not hardcode ANSI.
 - Generator pane: `tui/generator.go` + the `generator*` methods in `tui.go`
   (`handleGeneratorKey`, `generatorView`, `generatorList`, `generatorOutput`).
-  Keys: ↑↓/jk select, g/G first/last, i LHOST, p LPORT, n cycle encoding, q quit.
-  Deliberately no copy-to-clipboard (accepted limitation in TUI mode).
-- Helpers: `trunc` (guards n<=0), `hardWrap` (safe for width>=1), `padRight`, `padLines`.
+  Keys: ↑↓/jk select, g/G first/last, i LHOST, p LPORT, n cycle encoding,
+  y/c copy, q quit. Layout is **stacked vertically** (list on top, output below)
+  so the output rows span full width and stay cleanly mouse-selectable.
+- Clipboard copy (y/c): `copyToClipboard` writes via **two complementary paths**,
+  because neither works everywhere:
+  - **Native tool (`nativeCopy`)** — shells out to `xclip`/`xsel` (X11),
+    `wl-copy` (Wayland), `pbcopy` (macOS) or `clip` (Windows). On Linux/BSD it
+    only runs when a local display is present (`$DISPLAY`/`$WAYLAND_DISPLAY`).
+    This is the path that works **locally**: many local emulators
+    (gnome-terminal, konsole, plain xterm) do **not** honour OSC 52, so the
+    escape sequence alone copies nothing there. On X11/Wayland it fills **both**
+    the CLIPBOARD selection (Ctrl+V) and the PRIMARY selection (middle-click /
+    Shift+Insert) — two independent writer processes, so the OSC 52
+    "two-sequences-break-each-other" caveat does **not** apply here. Best-effort,
+    returns bool; a plain SSH session has no display so it no-ops.
+  - **OSC 52** — `osc52Seq` builds a sequence for a given buffer; `copyToClipboard`
+    stages **two** back-to-back in `m.clipSeq` — system clipboard (`c`) **and** X11
+    PRIMARY (`p`) — so both Ctrl+V and middle-click / Shift+Insert paste work over
+    SSH. `View()` appends the pair to the frame exactly once then clears it
+    (race-free way to reach the terminal under Bubble Tea v1, which has no
+    `SetClipboard`). This is the path that reaches the operator **over SSH**, where
+    the terminal is remote. **Multiplexers:** under **screen** the sequence is
+    wrapped in screen's DCS passthrough (`$TERM` prefix `screen`, and not also in
+    tmux). Under **tmux** it is emitted **plain** (no `osc52.Tmux()` wrap): tmux's
+    passthrough needs `allow-passthrough on` (off by default, security-gated),
+    whereas the far more common `set-clipboard on` makes tmux natively intercept a
+    plain OSC 52, set its buffer and relay it out — so `set-clipboard on` is the
+    documented tmux requirement (its default `external` blocks in-pane apps).
+    Verified on operator terminals: bare kitty over SSH, screen, and tmux with
+    `set-clipboard on` all copy both selections; gnome-terminal (no OSC 52) no-ops.
+    (Historical note: a prior session found dual `c`+`p` sequences "broke copying"
+    and reverted to `c` only; on operator retest that was a false negative — kitty
+    over SSH accepts both — so the second sequence is back. If a terminal regresses
+    on the pair, that history is why.)
+  Both fire on every copy; each is a no-op where it does not apply, so local and
+  remote operation are both covered. OSC 52 support is still best-effort (iTerm2,
+  kitty, WezTerm, foot, recent xterm); the render path is verified — a real
+  bubbletea program (with a window size) does emit the bytes. Dependency:
+  `github.com/aymanbagabas/go-osc52/v2`.
+- Helpers: `trunc` (guards n<=0), `hardWrap` (safe for width>=1), `padRight`,
+  `padLines`, `sepRow` (horizontal divider for the stacked generator).
 
 ---
 

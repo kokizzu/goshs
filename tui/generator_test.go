@@ -141,6 +141,53 @@ func TestGeneratorKeyEncodingToggle(t *testing.T) {
 	}
 }
 
+func TestGeneratorKeyCopyStagesOSC52(t *testing.T) {
+	m := &model{genIP: "10.9.8.7", genPort: "1337", genSel: 0}
+	cmd := generateCommand(shellDB[0].tmpl, m.genIP, m.genPort, m.genEnc)
+
+	if _, handled := m.handleGeneratorKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")}); !handled {
+		t.Fatal("y should be handled by the generator")
+	}
+	if m.clipSeq == "" {
+		t.Fatal("y should stage an OSC 52 sequence in clipSeq")
+	}
+	// The OSC 52 payload is the base64 of the command; it appears verbatim even
+	// when wrapped for tmux/screen, so this holds regardless of the test env. We
+	// copy to both the system clipboard ('c') and the X11 PRIMARY ('p') selection,
+	// so the payload appears twice — once per sequence.
+	want := base64.StdEncoding.EncodeToString([]byte(cmd))
+	if n := strings.Count(m.clipSeq, want); n != 2 {
+		t.Fatalf("clipSeq should carry the command twice, once per selection (want 2, got %d)\nseq: %q", n, m.clipSeq)
+	}
+	if !strings.Contains(m.clipSeq, ";c;") || !strings.Contains(m.clipSeq, ";p;") {
+		t.Fatalf("clipSeq should target both the system (;c;) and primary (;p;) buffers\nseq: %q", m.clipSeq)
+	}
+	if m.flash == "" {
+		t.Fatal("copy should set a flash message")
+	}
+}
+
+func TestViewEmitsClipboardSequenceOnce(t *testing.T) {
+	opts := &options.Options{IP: "0.0.0.0", Port: 8000, Webroot: "/srv"}
+	m := newModel(opts, nil, nil, nil, nil, nil, nil)
+	m.width, m.height, m.active = 100, 40, paneGenerator
+	m.genIP, m.genPort, m.genSel = "10.9.8.7", "1337", 0
+	m.handleGeneratorKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	seq := m.clipSeq
+	if seq == "" {
+		t.Fatal("c should stage a clipboard sequence")
+	}
+	if first := m.View(); !strings.Contains(first, seq) {
+		t.Fatal("first View after copy must emit the OSC 52 sequence")
+	}
+	if m.clipSeq != "" {
+		t.Fatal("View must clear clipSeq after emitting it")
+	}
+	if second := m.View(); strings.Contains(second, seq) {
+		t.Fatal("second View must not re-emit the sequence")
+	}
+}
+
 func TestGeneratorKeyLeavesPaneSwitchingAlone(t *testing.T) {
 	m := &model{}
 	if _, handled := m.handleGeneratorKey(tea.KeyMsg{Type: tea.KeyTab}); handled {

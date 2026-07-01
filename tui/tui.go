@@ -12,12 +12,15 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/aymanbagabas/go-osc52/v2"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
@@ -149,6 +152,8 @@ type model struct {
 
 	flash       string    // transient status message (e.g. export result)
 	flashExpiry time.Time // when the flash message should clear
+
+	clipSeq string // OSC 52 escape sequence to emit on the next render (one-shot clipboard copy), empty when nothing pending
 
 	inputActive bool                 // single-line text input mode is open
 	inputBuf    string               // text typed so far in input mode
@@ -1207,6 +1212,104 @@ func (m *model) setFlash(msg string) {
 	m.flashExpiry = time.Now().Add(4 * time.Second)
 }
 
+// copyToClipboard writes text to the operator's clipboard by two complementary
+// paths, because neither works everywhere:
+//
+//   - nativeCopy shells out to a local clipboard tool (xclip/xsel/wl-copy/
+//     pbcopy/clip). This is the path that works when goshs runs on the same
+//     machine as the terminal — many local emulators (gnome-terminal, konsole,
+//     plain xterm) do NOT honour OSC 52, so the escape sequence alone copies
+//     nothing there.
+//   - An OSC 52 escape sequence staged on the next render (see View). This is
+//     the path that works when the TUI is driven over SSH/tmux on a target box
+//     with no local display: the operator's terminal emulator receives the
+//     sequence and updates their real clipboard.
+//
+// Doing both covers local and remote operation; each is a no-op where it does
+// not apply. Support is still best-effort, so the flash says "copied" even
+// though we cannot read the clipboard back to confirm.
+func (m *model) copyToClipboard(text, label string) {
+	// nativeCopy already fills both the CLIPBOARD and PRIMARY selections locally.
+	nativeCopy(text)
+	// For the OSC 52 path (the one that reaches the operator over SSH), emit the
+	// system CLIPBOARD ('c') sequence and, right after it, the X11 PRIMARY ('p')
+	// sequence — so middle-click / Shift+Insert paste also works remotely, not
+	// just Ctrl+V. Concatenated into a single clipSeq so View() flushes them
+	// together on one frame.
+	m.clipSeq = osc52Seq(text, osc52.SystemClipboard) + osc52Seq(text, osc52.PrimaryClipboard)
+	m.setFlash(label)
+}
+
+// nativeCopy best-effort writes text to the operator's OS clipboard by shelling
+// out to a platform clipboard tool. On X11/Wayland it fills BOTH the CLIPBOARD
+// selection (Ctrl+V) and the PRIMARY selection (middle-click / Shift+Insert), so
+// a paste works regardless of which convention the operator uses; unlike OSC 52,
+// these are independent processes writing straight to the display server, so
+// there is no two-sequences-break-each-other problem. On Linux/BSD it only runs
+// when a local display is present (DISPLAY / WAYLAND_DISPLAY), so it stays a
+// no-op over a plain SSH session where the OSC 52 path in copyToClipboard is what
+// reaches the operator instead. Returns false when no suitable tool/display is
+// available or every command failed.
+func nativeCopy(text string) bool {
+	// Each entry is a command + args; multiple entries target multiple
+	// selections (e.g. clipboard + primary on X11).
+	var cmds [][]string
+	switch runtime.GOOS {
+	case "darwin":
+		cmds = [][]string{{"pbcopy"}} // macOS has a single clipboard
+	case "windows":
+		cmds = [][]string{{"clip"}} // Windows has a single clipboard
+	default: // linux, *bsd
+		switch {
+		case os.Getenv("WAYLAND_DISPLAY") != "":
+			if _, err := exec.LookPath("wl-copy"); err == nil {
+				cmds = [][]string{{"wl-copy"}, {"wl-copy", "--primary"}}
+			}
+		case os.Getenv("DISPLAY") != "":
+			if _, err := exec.LookPath("xclip"); err == nil {
+				cmds = [][]string{
+					{"xclip", "-selection", "clipboard"},
+					{"xclip", "-selection", "primary"},
+				}
+			} else if _, err := exec.LookPath("xsel"); err == nil {
+				cmds = [][]string{
+					{"xsel", "--clipboard", "--input"},
+					{"xsel", "--primary", "--input"},
+				}
+			}
+		}
+	}
+	ok := false
+	for _, c := range cmds {
+		cmd := exec.Command(c[0], c[1:]...)
+		cmd.Stdin = strings.NewReader(text)
+		if cmd.Run() == nil {
+			ok = true
+		}
+	}
+	return ok
+}
+
+// osc52Seq builds a single OSC 52 copy sequence for the given clipboard buffer.
+//
+// Under GNU screen it wraps the sequence in screen's DCS passthrough so it
+// reaches the outer terminal (screen passes DCS through permissively).
+//
+// Under tmux it does NOT wrap. tmux's own DCS-passthrough (osc52.Tmux()) requires
+// `allow-passthrough on`, which is off by default and security-gated; relying on
+// it left copies silently dropped for operators who had the far more common
+// `set-clipboard on` set instead. So we emit a plain OSC 52 and let tmux forward
+// it: with `set-clipboard on` tmux intercepts the app's sequence, sets its buffer
+// and relays it to the outer terminal. (tmux's default `set-clipboard external`
+// blocks in-pane apps, so `set-clipboard on` is the documented requirement.)
+func osc52Seq(text string, buf osc52.Clipboard) string {
+	seq := osc52.New(text).Clipboard(buf)
+	if strings.HasPrefix(os.Getenv("TERM"), "screen") && os.Getenv("TMUX") == "" {
+		seq = seq.Screen()
+	}
+	return seq.String()
+}
+
 // --- view -------------------------------------------------------------------
 
 // Nord palette (https://www.nordtheme.com) — the same theme the web UI uses,
@@ -1290,6 +1393,9 @@ func (m *model) handleGeneratorKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 		})
 	case "n":
 		m.genEnc = m.genEnc.next()
+	case "y", "c":
+		// Copy the filled command to the operator's clipboard via OSC 52.
+		m.copyToClipboard(generateCommand(shellDB[m.genSel].tmpl, m.genIP, m.genPort, m.genEnc), "copied command to clipboard")
 	case "enter", "e":
 		// The form has no detail view and no per-pane log to export; swallow
 		// these so ⏎ does not toggle detail and e does not write an empty file.
@@ -1402,7 +1508,17 @@ func (m *model) View() string {
 		bodyH = 1
 	}
 	body := m.bodyView(bodyH)
-	return strings.Join([]string{banner, tabs, body, status}, "\n")
+	frame := strings.Join([]string{banner, tabs, body, status}, "\n")
+	// Flush a pending clipboard copy by appending its OSC 52 sequence to the
+	// frame exactly once. OSC 52 does not move the cursor or occupy cells, so it
+	// is invisible in the rendered output; embedding it in the frame is the
+	// race-free way to reach the terminal under Bubble Tea v1 (which, unlike v2,
+	// has no SetClipboard). Cleared here so it is emitted a single time.
+	if m.clipSeq != "" {
+		frame += m.clipSeq
+		m.clipSeq = ""
+	}
+	return frame
 }
 
 // banner renders the goshs logo at the top. On short terminals it collapses to
@@ -1620,7 +1736,7 @@ func (m *model) controlsHint() string {
 	}
 	switch m.active {
 	case paneGenerator:
-		return "⇄ Tab/←→ panes · ↑↓ shell · i LHOST · p LPORT · n encoding · q quit"
+		return "⇄ Tab/←→ panes · ↑↓ shell · i LHOST · p LPORT · n encoding · y/c copy · q quit"
 	case paneClipboard:
 		return "⇄ Tab/←→ panes · ↑↓ scroll · ⏎ view · a add · d delete · C clear · e export · q quit"
 	case paneShells:
