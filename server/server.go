@@ -36,7 +36,7 @@ type Servers struct {
 	Clipboard *clipboard.Clipboard
 }
 
-func StartAll(opts *options.Options) *Servers {
+func StartAll(opts *options.Options) (*Servers, error) {
 	// Init clipboard and hub
 	clip := clipboard.New()
 	hub := ws.NewHub(clip, opts.CLI)
@@ -45,8 +45,13 @@ func StartAll(opts *options.Options) *Servers {
 	// Whitelist and Webhook
 	wl, wh := registerWhitelistWebhook(opts)
 
-	// http
+	// http — bind synchronously so a port conflict is reported to the caller
+	// (and, under --tui, before the dashboard takes over the terminal) instead
+	// of the serving goroutine calling Fatalf behind its back.
 	httpSrv := httpserver.NewHttpServer(opts, hub, clip, wl, *wh)
+	if err := httpSrv.Bind("web"); err != nil {
+		return nil, err
+	}
 	go httpSrv.Start("web")
 
 	// webdav
@@ -54,41 +59,70 @@ func StartAll(opts *options.Options) *Servers {
 	if opts.WebDav {
 		webdavSrv = httpserver.NewHttpServer(opts, hub, clip, wl, *wh)
 		webdavSrv.WebdavPort = opts.WebDavPort
+		if err := webdavSrv.Bind("webdav"); err != nil {
+			return nil, err
+		}
 		go webdavSrv.Start("webdav")
 	}
 
+	// Every listening protocol below is bound synchronously via its Bind method
+	// before its serving goroutine starts, so a port conflict (or any bind
+	// error) surfaces here — and, under --tui, before the dashboard takes over
+	// the terminal — instead of a goroutine calling Fatalf or silently dropping
+	// the error.
 	if opts.DNS {
 		dnsSrv := dnsserver.NewDNSServer(opts, hub, wh)
+		if err := dnsSrv.Bind(); err != nil {
+			return nil, err
+		}
 		go dnsSrv.Start()
 	}
 
 	if opts.SMTP {
 		smtpServer := smtpserver.NewSMTP(opts, hub, wh)
+		if err := smtpServer.Bind(); err != nil {
+			return nil, err
+		}
 		go smtpServer.Start()
 	}
 
 	if opts.SMB {
 		smbServer := smbserver.NewSMBServer(opts, hub, wh)
+		if err := smbServer.Bind(); err != nil {
+			return nil, err
+		}
 		go smbServer.Start()
 	}
 
 	if opts.LDAP {
 		ldapSrv := ldapserver.NewLDAPServer(opts, hub, wh)
+		if err := ldapSrv.Bind(); err != nil {
+			return nil, err
+		}
 		go ldapSrv.Start()
 	}
 
 	if opts.FTP {
 		if opts.FTPSFTPMode {
 			sftpSrv := sftpserver.NewSFTPServer(opts, wl, *wh)
-			go sftpSrv.Start()
+			if err := sftpSrv.Bind(); err != nil {
+				return nil, err
+			}
+			go func() { _ = sftpSrv.Start() }()
 		} else {
 			ftpSrv := ftpserver.NewFTPServer(opts, wl, *wh)
-			go ftpSrv.Start()
+			if err := ftpSrv.Bind(); err != nil {
+				return nil, err
+			}
+			go func() { _ = ftpSrv.Start() }()
 		}
 	}
 
 	if opts.TFTP {
 		tftpSrv := tftpserver.NewTFTPServer(opts, wl, *wh)
+		if err := tftpSrv.Bind(); err != nil {
+			return nil, err
+		}
 		go func() { _ = tftpSrv.Start() }()
 	}
 
@@ -117,7 +151,7 @@ func StartAll(opts *options.Options) *Servers {
 		Catcher:   httpSrv.CatcherMgr,
 		TunnelURL: func() string { return httpSrv.TunnelURL },
 		Clipboard: clip,
-	}
+	}, nil
 }
 
 func registerWhitelistWebhook(opts *options.Options) (wl *httpserver.Whitelist, wh *webhook.Webhook) {

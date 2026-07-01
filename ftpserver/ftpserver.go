@@ -25,6 +25,8 @@ type FTPServer struct {
 	NoDelete  bool
 	Webhook   webhook.Webhook
 	Whitelist *httpserver.Whitelist
+
+	srv *ftplib.FtpServer // bound by Bind, served by Start
 }
 
 func NewFTPServer(opts *options.Options, wl *httpserver.Whitelist, wh webhook.Webhook) *FTPServer {
@@ -41,11 +43,29 @@ func NewFTPServer(opts *options.Options, wl *httpserver.Whitelist, wh webhook.We
 	}
 }
 
-func (s *FTPServer) Start() error {
+// Bind acquires the listening socket so a port conflict is reported to the
+// caller synchronously. Previously the bind error from ListenAndServe was
+// discarded by the launching goroutine, so a port clash silently disabled FTP
+// with no message.
+func (s *FTPServer) Bind() error {
 	driver := &mainDriver{srv: s}
 	srv := ftplib.NewFtpServer(driver)
+	if err := srv.Listen(); err != nil {
+		return fmt.Errorf("FTP: failed to listen on %s:%d: %w", s.IP, s.Port, err)
+	}
+	s.srv = srv
+	return nil
+}
+
+func (s *FTPServer) Start() error {
+	// Bind lazily if a caller did not already do so via Bind.
+	if s.srv == nil {
+		if err := s.Bind(); err != nil {
+			return err
+		}
+	}
 	logger.Infof("Starting FTP server on %s:%d", s.IP, s.Port)
-	return srv.ListenAndServe()
+	return s.srv.Serve()
 }
 
 func (s *FTPServer) HandleWebhookSend(action, path, ip string, blocked bool) {

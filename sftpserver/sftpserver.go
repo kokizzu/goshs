@@ -30,6 +30,8 @@ type SFTPServer struct {
 	HostKeyFile string
 	Webhook     webhook.Webhook
 	Whitelist   *httpserver.Whitelist
+
+	ln net.Listener // bound by Bind, served by Start
 }
 
 func NewSFTPServer(opts *options.Options, wl *httpserver.Whitelist, webhook webhook.Webhook) *SFTPServer {
@@ -46,6 +48,17 @@ func NewSFTPServer(opts *options.Options, wl *httpserver.Whitelist, webhook webh
 		Webhook:     webhook,
 		Whitelist:   wl,
 	}
+}
+
+// Bind acquires the listening socket so a port conflict is reported to the
+// caller synchronously instead of a serving goroutine swallowing it.
+func (s *SFTPServer) Bind() error {
+	ln, err := net.Listen("tcp", net.JoinHostPort(s.IP, strconv.Itoa(s.Port)))
+	if err != nil {
+		return fmt.Errorf("SFTP: failed to listen on %s:%d: %w", s.IP, s.Port, err)
+	}
+	s.ln = ln
+	return nil
 }
 
 // Start initializes and starts the SFTP server
@@ -140,10 +153,15 @@ func (s *SFTPServer) Start() error {
 		},
 	}
 
-	logger.Infof("Starting SFTP server on port %s:%d", s.IP, s.Port)
-	logger.Fatal(sshServer.ListenAndServe())
+	// Bind lazily if a caller did not already do so via Bind.
+	if s.ln == nil {
+		if err := s.Bind(); err != nil {
+			return err
+		}
+	}
 
-	return nil
+	logger.Infof("Starting SFTP server on port %s:%d", s.IP, s.Port)
+	return sshServer.Serve(s.ln)
 }
 
 func (s *SFTPServer) HandleWebhookSend(event string, r *sftp.Request, ip string, blocked bool) {

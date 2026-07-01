@@ -27,8 +27,21 @@ Module path: `goshs.de/goshs/v2`. Current version lives in
 ## Feature / protocol surface
 
 All of these are toggled via CLI flags / config and launched together by
-`server.StartAll(opts)` in `server/server.go` (fire-and-forget goroutines, one per
-enabled protocol; no per-protocol stop handles). `main.go` orchestrates startup;
+`server.StartAll(opts)` in `server/server.go` (serving goroutines, one per enabled
+protocol; no per-protocol stop handles). **Every listening protocol is bound
+synchronously first:** each server exposes a `Bind()` method that acquires its
+socket(s) and stores them on the struct, and `StartAll` calls `Bind()` before
+`go …Start()`, returning `(*Servers, error)`. So a port conflict (or any bind
+error) surfaces to `main.go` and is fatal *before* the `--tui` dashboard takes
+over the terminal — instead of a serving goroutine calling `logger.Fatalf` →
+`os.Exit` behind Bubble Tea's back (which under `--tui` discarded the message and
+left the terminal in raw mode needing `reset`) or, for FTP, silently swallowing
+the error in the launching goroutine. Each `Start()` still binds lazily if `Bind()`
+was not called first, so direct callers keep working. Coverage: `httpserver`
+(`FileServer.Bind(what)`, HTTP + WebDAV), `dnsserver` (UDP+TCP, served via
+`ActivateAndServe`), `smtpserver`/`sftpserver` (library `Serve(l)`), `ftpserver`
+(ftplib `Listen()`+`Serve()`), `smbserver`/`ldapserver` (hand-rolled
+`net.Listen`), `tftpserver` (`net.ListenPacket`). `main.go` orchestrates startup;
 `sanity` does flag validation + `FurtherProcessing` (e.g. parsing `--tpl-var`).
 
 | Capability | Package | Notes |
@@ -76,7 +89,11 @@ example. Work through **all** of these:
 3. `example/goshs.json.example` — add the JSON key(s) with default value(s).
    (Verify with `go run . -P`.)
 4. For a new server: create the `xserver/` package (`New…Server(opts, …)` +
-   `Start()`), then launch it in `server.StartAll` (`if opts.X { … go srv.Start() }`).
+   `Bind() error` + `Start()`). `Bind()` acquires the socket(s) and stores them on
+   the struct; `Start()` serves them (and binds lazily if `Bind()` wasn't called).
+   Launch it in `server.StartAll` as `if opts.X { if err := srv.Bind(); err != nil
+   { return nil, err }; go srv.Start() }` so port conflicts are fatal *before* the
+   `--tui` dashboard grabs the terminal (see the StartAll bind note above).
 5. `sanity/checks.go` — if it's a noisy/listening server, disable it in the
    invisible-mode block (and update that block's log message).
 6. `utils/utils.go` `RegisterZeroconfMDNS(...)` — add a param + a

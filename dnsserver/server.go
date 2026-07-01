@@ -21,6 +21,9 @@ type DNSServer struct {
 	Hub     *ws.Hub
 	Silent  bool
 	WebHook *webhook.Webhook
+
+	udpConn net.PacketConn // bound by Bind, served by Start
+	tcpLn   net.Listener   // bound by Bind, served by Start
 }
 
 func NewDNSServer(opts *options.Options, hub *ws.Hub, wh *webhook.Webhook) *DNSServer {
@@ -85,12 +88,35 @@ func (d *DNSServer) handler(w dns.ResponseWriter, r *dns.Msg) {
 	_ = w.WriteMsg(m)
 }
 
-func (d *DNSServer) Start() {
+// Bind acquires the UDP and TCP sockets so a port conflict is reported to the
+// caller synchronously instead of a serving goroutine swallowing it.
+func (d *DNSServer) Bind() error {
 	addr := net.JoinHostPort(d.IP, strconv.Itoa(d.Port))
-	udpServer := &dns.Server{Addr: addr, Net: "udp", Handler: dns.HandlerFunc(d.handler)}
-	tcpServer := &dns.Server{Addr: addr, Net: "tcp", Handler: dns.HandlerFunc(d.handler)}
+	pc, err := net.ListenPacket("udp", addr)
+	if err != nil {
+		return fmt.Errorf("DNS: failed to listen on udp %s: %w", addr, err)
+	}
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		_ = pc.Close()
+		return fmt.Errorf("DNS: failed to listen on tcp %s: %w", addr, err)
+	}
+	d.udpConn = pc
+	d.tcpLn = ln
+	return nil
+}
+
+func (d *DNSServer) Start() {
+	// Bind lazily if a caller did not already do so via Bind.
+	if d.udpConn == nil || d.tcpLn == nil {
+		if err := d.Bind(); err != nil {
+			logger.Fatalf("%+v", err)
+		}
+	}
+	udpServer := &dns.Server{PacketConn: d.udpConn, Net: "udp", Handler: dns.HandlerFunc(d.handler)}
+	tcpServer := &dns.Server{Listener: d.tcpLn, Net: "tcp", Handler: dns.HandlerFunc(d.handler)}
 	logger.Infof("DNS server listening on udp/tcp %s:%d", d.IP, d.Port)
 
-	go func() { _ = udpServer.ListenAndServe() }()
-	go func() { _ = tcpServer.ListenAndServe() }()
+	go func() { _ = udpServer.ActivateAndServe() }()
+	go func() { _ = tcpServer.ActivateAndServe() }()
 }

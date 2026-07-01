@@ -69,6 +69,8 @@ type TFTPServer struct {
 	UploadOnly bool
 	Webhook    webhook.Webhook
 	Whitelist  *httpserver.Whitelist
+
+	pc net.PacketConn // bound by Bind, served by Start
 }
 
 // NewTFTPServer builds a TFTPServer from the parsed options. Writes land in the
@@ -93,18 +95,31 @@ func NewTFTPServer(opts *options.Options, wl *httpserver.Whitelist, wh webhook.W
 // Start binds the main UDP socket and dispatches each incoming request to its
 // own goroutine. It blocks; callers run it in a goroutine like the other
 // protocol servers.
-func (s *TFTPServer) Start() error {
+// Bind acquires the main UDP socket so a port conflict is reported to the caller
+// synchronously instead of the serving goroutine swallowing it.
+func (s *TFTPServer) Bind() error {
 	addr := net.JoinHostPort(s.IP, strconv.Itoa(s.Port))
 	pc, err := net.ListenPacket("udp", addr)
 	if err != nil {
-		logger.Errorf("[TFTP] failed to bind %s: %v", addr, err)
-		return err
+		return fmt.Errorf("[TFTP] failed to bind %s: %w", addr, err)
+	}
+	s.pc = pc
+	return nil
+}
+
+func (s *TFTPServer) Start() error {
+	// Bind lazily if a caller did not already do so via Bind.
+	if s.pc == nil {
+		if err := s.Bind(); err != nil {
+			logger.Errorf("%+v", err)
+			return err
+		}
 	}
 	logger.Infof("Starting TFTP server on %s:%d", s.IP, s.Port)
 
 	buf := make([]byte, 65535)
 	for {
-		n, client, err := pc.ReadFrom(buf)
+		n, client, err := s.pc.ReadFrom(buf)
 		if err != nil {
 			logger.Warnf("[TFTP] read error on main socket: %v", err)
 			continue

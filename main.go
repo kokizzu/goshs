@@ -68,8 +68,14 @@ func main() {
 		logger.PrintBanner(goshsversion.GoshsVersion)
 	}
 
-	// Start all servers
-	srv := server.StartAll(opts)
+	// Start all servers. A bind failure (e.g. the HTTP port is already in use)
+	// is returned here, before the TUI takes over the terminal, so the message
+	// is printed and we exit cleanly instead of the dashboard vanishing without
+	// a trace and leaving the terminal in raw mode.
+	srv, err := server.StartAll(opts)
+	if err != nil {
+		logger.Fatalf("Failed to start: %+v", err)
+	}
 
 	// Arm the self-destruct timer if --ttl was set. A zero TTL leaves ttlC nil,
 	// which blocks forever in the select below.

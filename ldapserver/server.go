@@ -25,6 +25,8 @@ type LDAPServer struct {
 	SelfSigned   bool
 	MyCert       string
 	MyKey        string
+
+	ln net.Listener // bound by Bind, served by Start
 }
 
 func NewLDAPServer(opts *options.Options, hub *ws.Hub, wh *webhook.Webhook) *LDAPServer {
@@ -85,19 +87,34 @@ func (s *LDAPServer) buildTLSConfig() *tls.Config {
 	}
 }
 
-func (s *LDAPServer) Start() {
+// Bind acquires the listening socket (TLS-wrapped when LDAPS) so a port conflict
+// is reported to the caller synchronously instead of a serving goroutine
+// swallowing it.
+func (s *LDAPServer) Bind() error {
 	addr := fmt.Sprintf("%s:%d", s.IP, s.Port)
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
-		logger.Fatalf("LDAP server failed to listen on %s: %v", addr, err)
-		return
+		return fmt.Errorf("LDAP server failed to listen on %s: %w", addr, err)
+	}
+	if s.SSL {
+		ln = tls.NewListener(ln, s.buildTLSConfig())
+	}
+	s.ln = ln
+	return nil
+}
+
+func (s *LDAPServer) Start() {
+	// Bind lazily if a caller did not already do so via Bind.
+	if s.ln == nil {
+		if err := s.Bind(); err != nil {
+			logger.Fatalf("%+v", err)
+		}
 	}
 
 	if s.SSL {
-		ln = tls.NewListener(ln, s.buildTLSConfig())
-		logger.Infof("LDAPS server listening on %s", addr)
+		logger.Infof("LDAPS server listening on %s:%d", s.IP, s.Port)
 	} else {
-		logger.Infof("LDAP server listening on %s", addr)
+		logger.Infof("LDAP server listening on %s:%d", s.IP, s.Port)
 	}
 
 	if s.JNDIEnabled {
@@ -105,7 +122,7 @@ func (s *LDAPServer) Start() {
 	}
 
 	for {
-		conn, err := ln.Accept()
+		conn, err := s.ln.Accept()
 		if err != nil {
 			logger.Errorf("LDAP accept error: %v", err)
 			continue

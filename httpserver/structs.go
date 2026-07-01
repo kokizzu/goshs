@@ -2,6 +2,7 @@ package httpserver
 
 import (
 	"html/template"
+	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -100,6 +101,8 @@ type FileServer struct {
 	authFailMu     sync.Mutex
 	httpServer     *http.Server
 	sharedLinksMu  sync.RWMutex
+	mux            *CustomMux   // set by Bind, consumed by Start
+	listener       net.Listener // pre-bound by Bind so port errors surface synchronously
 }
 
 type authFailEntry struct {

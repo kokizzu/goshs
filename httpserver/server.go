@@ -389,18 +389,35 @@ func (fs *FileServer) StartListener(server *http.Server, what string, listener n
 	}
 }
 
-// Start will start the file server
-func (fs *FileServer) Start(what string) {
-	// Setup routing with gorilla/mux
+// Bind sets up routing and binds the TCP listener, returning any error (most
+// commonly "address already in use") instead of exiting. Callers can invoke it
+// synchronously before Start so a bind failure surfaces on the main goroutine —
+// this matters under --tui, where a Fatalf from the serving goroutine would exit
+// the process behind Bubble Tea's back, leaving no message and a corrupted
+// terminal. Start binds lazily if Bind was not called first.
+func (fs *FileServer) Bind(what string) error {
 	mux := NewCustomMux()
-
 	addr := fs.SetupMux(mux, what)
 
-	// construct and bind listener
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
-		logger.Fatalf("Error binding to listener '%s': %+v", addr, err)
+		return fmt.Errorf("error binding to listener '%s': %w", addr, err)
 	}
+	fs.mux = mux
+	fs.listener = listener
+	return nil
+}
+
+// Start will start the file server
+func (fs *FileServer) Start(what string) {
+	// Bind lazily if a caller did not already do so via Bind.
+	if fs.listener == nil {
+		if err := fs.Bind(what); err != nil {
+			logger.Fatalf("%+v", err)
+		}
+	}
+	mux := fs.mux
+	listener := fs.listener
 	defer func() {
 		if err := listener.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
 			logger.Errorf("error closing tcp listener: %+v", err)

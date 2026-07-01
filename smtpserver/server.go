@@ -1,6 +1,7 @@
 package smtpserver
 
 import (
+	"fmt"
 	"net"
 	"strconv"
 	"time"
@@ -19,6 +20,8 @@ type SMTPServer struct {
 	Hub     *ws.Hub
 	WebHook *webhook.Webhook
 	Domain  string
+
+	ln net.Listener // bound by Bind, served by Start
 }
 
 func NewSMTP(opts *options.Options, hub *ws.Hub, wh *webhook.Webhook) *SMTPServer {
@@ -31,7 +34,25 @@ func NewSMTP(opts *options.Options, hub *ws.Hub, wh *webhook.Webhook) *SMTPServe
 	}
 }
 
+// Bind acquires the listening socket so a port conflict is reported to the
+// caller synchronously instead of a serving goroutine swallowing it.
+func (srv *SMTPServer) Bind() error {
+	addr := net.JoinHostPort(srv.IP, strconv.Itoa(srv.Port))
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("SMTP: failed to listen on %s: %w", addr, err)
+	}
+	srv.ln = ln
+	return nil
+}
+
 func (srv *SMTPServer) Start() {
+	// Bind lazily if a caller did not already do so via Bind.
+	if srv.ln == nil {
+		if err := srv.Bind(); err != nil {
+			logger.Fatalf("%+v", err)
+		}
+	}
 	be := &Backend{Hub: srv.Hub, WebHook: srv.WebHook}
 	s := smtp.NewServer(be)
 	addr := net.JoinHostPort(srv.IP, strconv.Itoa(srv.Port))
@@ -43,6 +64,6 @@ func (srv *SMTPServer) Start() {
 	} else {
 		logger.Infof("SMTP catch-all listening on %s (open relay)", addr)
 	}
-	go func() { _ = s.ListenAndServe() }()
+	go func() { _ = s.Serve(srv.ln) }()
 	go smtpattach.PurgeLoop(1 * time.Hour)
 }

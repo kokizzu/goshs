@@ -38,6 +38,8 @@ type SMBServer struct {
 	Hub        *ws.Hub
 	WebHook    *webhook.Webhook
 
+	ln net.Listener // bound by Bind, served by Start
+
 	serverGUID    [16]byte // random, set once at Start
 	nextSessionID uint64   // server-wide session ID counter (atomic)
 
@@ -81,20 +83,33 @@ func NewSMBServer(opts *options.Options, hub *ws.Hub, webHook *webhook.Webhook) 
 	}
 }
 
+// Bind acquires the listening socket so a port conflict is reported to the
+// caller synchronously instead of a serving goroutine swallowing it.
+func (s *SMBServer) Bind() error {
+	addr := net.JoinHostPort(s.IP, strconv.Itoa(s.Port))
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("SMB: failed to listen on %s: %w", addr, err)
+	}
+	s.ln = ln
+	return nil
+}
+
 func (s *SMBServer) Start() {
 	if _, err := rand.Read(s.serverGUID[:]); err != nil {
 		logger.Fatalf("SMB: failed to generate server GUID: %v", err)
 	}
 
-	addr := net.JoinHostPort(s.IP, strconv.Itoa(s.Port))
-	ln, err := net.Listen("tcp", addr)
-	if err != nil {
-		logger.Fatalf("SMB: failed to listen on %s: %v", addr, err)
+	// Bind lazily if a caller did not already do so via Bind.
+	if s.ln == nil {
+		if err := s.Bind(); err != nil {
+			logger.Fatalf("%+v", err)
+		}
 	}
-	logger.Infof("SMB server listening on %s (\\\\%s\\%s) — hash capture active", addr, s.IP, s.ShareName)
+	logger.Infof("SMB server listening on %s (\\\\%s\\%s) — hash capture active", s.ln.Addr(), s.IP, s.ShareName)
 
 	for {
-		conn, err := ln.Accept()
+		conn, err := s.ln.Accept()
 		if err != nil {
 			continue
 		}
