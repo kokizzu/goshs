@@ -121,6 +121,22 @@ winget:
 checksum:
   name_template: "checksums.txt"
 
+# Keyless (OIDC) cosign signature over the checksums file. Produces
+# checksums.txt.sig + checksums.txt.pem alongside the release, which is what
+# OpenSSF Scorecard's Signed-Releases check looks for. Requires cosign on PATH
+# and `id-token: write` in the release job (see .github/workflows/release.yml).
+signs:
+  - cmd: cosign
+    certificate: "${artifact}.pem"
+    args:
+      - sign-blob
+      - "--output-certificate=${certificate}"
+      - "--output-signature=${signature}"
+      - "${artifact}"
+      - "--yes"
+    artifacts: checksum
+    output: true
+
 snapshot:
   version_template: "{{ .Tag }}-next"
 
