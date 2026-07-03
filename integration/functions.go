@@ -11,17 +11,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/mount"
-	"github.com/docker/go-connections/nat"
 	smb2 "github.com/hirochachacha/go-smb2"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/mount"
+	"github.com/moby/moby/api/types/network"
 	"github.com/stretchr/testify/require"
 	"github.com/studio-b12/gowebdav"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
-func spawnTestContainer(t *testing.T, config string, webdav bool, smb bool) nat.Port {
+func spawnTestContainer(t *testing.T, config string, webdav bool, smb bool) network.Port {
 	// Make sure the host-side coverage drop dir exists and is writable
 	// by the container's non-root uid (1000). 0o777 is fine for an
 	// ephemeral test artifact directory.
@@ -30,11 +30,11 @@ func spawnTestContainer(t *testing.T, config string, webdav bool, smb bool) nat.
 
 	// webdav ports
 	var webdavPort string
-	var webdavPortNat nat.Port
+	var webdavPortSpec string
 
 	// smb ports
 	var smbPort string
-	var smbPortNat nat.Port
+	var smbPortSpec string
 
 	// fetch the server config
 	configPath := fmt.Sprintf(config, os.Getenv("PWD"))
@@ -66,21 +66,18 @@ func spawnTestContainer(t *testing.T, config string, webdav bool, smb bool) nat.
 
 	// declare the port for this test
 	testPort := fmt.Sprintf("%d", UnsecuredServerPort)
-	testPortNat, err := nat.NewPort("tcp", testPort)
-	require.NoError(t, err)
+	testPortSpec := testPort + "/tcp"
 
 	if webdav {
 		// declare webdav port
 		webdavPort = fmt.Sprintf("%d", UnsecuredWebdavPort)
-		webdavPortNat, err = nat.NewPort("tcp", webdavPort)
-		require.NoError(t, err)
+		webdavPortSpec = webdavPort + "/tcp"
 	}
 
 	if smb {
 		// declare smb port
 		smbPort = fmt.Sprintf("%d", UnsecuredSMBPort)
-		smbPortNat, err = nat.NewPort("tcp", smbPort)
-		require.NoError(t, err)
+		smbPortSpec = smbPort + "/tcp"
 	}
 
 	// ContainerRequest for the test container
@@ -153,16 +150,16 @@ func spawnTestContainer(t *testing.T, config string, webdav bool, smb bool) nat.
 
 	// Build exposed ports and wait strategies
 	testContainer.ExposedPorts = []string{testPort}
-	waits := []wait.Strategy{wait.ForListeningPort(testPortNat)}
+	waits := []wait.Strategy{wait.ForListeningPort(testPortSpec)}
 
 	if webdav {
 		testContainer.ExposedPorts = append(testContainer.ExposedPorts, webdavPort)
-		waits = append(waits, wait.ForListeningPort(webdavPortNat))
+		waits = append(waits, wait.ForListeningPort(webdavPortSpec))
 	}
 
 	if smb {
 		testContainer.ExposedPorts = append(testContainer.ExposedPorts, smbPort)
-		waits = append(waits, wait.ForListeningPort(smbPortNat))
+		waits = append(waits, wait.ForListeningPort(smbPortSpec))
 	}
 
 	testContainer.WaitingFor = wait.ForAll(waits...)
@@ -180,15 +177,15 @@ func spawnTestContainer(t *testing.T, config string, webdav bool, smb bool) nat.
 
 	// return the appropriate port for testing
 	if smb {
-		smbReturnPort, err := goshsServer.MappedPort(ctx, smbPortNat)
+		smbReturnPort, err := goshsServer.MappedPort(ctx, smbPortSpec)
 		require.NoError(t, err)
 		return smbReturnPort
 	} else if webdav {
-		webdavReturnPort, err := goshsServer.MappedPort(ctx, webdavPortNat)
+		webdavReturnPort, err := goshsServer.MappedPort(ctx, webdavPortSpec)
 		require.NoError(t, err)
 		return webdavReturnPort
 	} else {
-		webReturnPort, err := goshsServer.MappedPort(ctx, testPortNat)
+		webReturnPort, err := goshsServer.MappedPort(ctx, testPortSpec)
 		require.NoError(t, err)
 		return webReturnPort
 	}

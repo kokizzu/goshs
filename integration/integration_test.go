@@ -11,7 +11,7 @@ import (
 func TestCertificationAuth(t *testing.T) {
 	// spawn a test container
 	port := spawnTestContainer(t, "%s/configs/cert_auth.json", false, false)
-	baseUrl := fmt.Sprintf("https://localhost:%d", port.Int())
+	baseUrl := fmt.Sprintf("https://localhost:%d", int(port.Num()))
 
 	// Test unauth connection
 	testUnauthCertConnection(t, baseUrl)
@@ -26,7 +26,7 @@ func TestCertificationAuth(t *testing.T) {
 func TestSelfSignedTLS(t *testing.T) {
 	// spawn a test container
 	port := spawnTestContainer(t, "%s/configs/tls_self_signed.json", false, false)
-	baseUrl := fmt.Sprintf("https://localhost:%d", port.Int())
+	baseUrl := fmt.Sprintf("https://localhost:%d", int(port.Num()))
 
 	// Test TLS Connection
 	testSelfSigned(t, baseUrl)
@@ -36,7 +36,7 @@ func TestSelfSignedTLS(t *testing.T) {
 func TestTLS(t *testing.T) {
 	// spawn a test container
 	port := spawnTestContainer(t, "%s/configs/tls_self_signed.json", false, false)
-	baseUrl := fmt.Sprintf("https://localhost:%d", port.Int())
+	baseUrl := fmt.Sprintf("https://localhost:%d", int(port.Num()))
 
 	// Test TLS Connection
 	testSelfSigned(t, baseUrl)
@@ -46,7 +46,7 @@ func TestTLS(t *testing.T) {
 func TestTLSP12(t *testing.T) {
 	// spawn a test container
 	port := spawnTestContainer(t, "%s/configs/tls_p12.json", false, false)
-	baseUrl := fmt.Sprintf("https://localhost:%d", port.Int())
+	baseUrl := fmt.Sprintf("https://localhost:%d", int(port.Num()))
 
 	// Test TLS Connection
 	testSelfSigned(t, baseUrl)
@@ -56,7 +56,7 @@ func TestTLSP12(t *testing.T) {
 func TestWebdav(t *testing.T) {
 	// spawn a test container
 	port := spawnTestContainer(t, "%s/configs/webdav.json", true, false)
-	baseUrl := fmt.Sprintf("http://localhost:%d", port.Int())
+	baseUrl := fmt.Sprintf("http://localhost:%d", int(port.Num()))
 
 	// Test connection
 	testWebdavConnection(t, baseUrl)
@@ -83,7 +83,7 @@ func TestWebdav(t *testing.T) {
 // TestWebdavAuth test if webdav works
 func TestWebdavAuth(t *testing.T) {
 	port := spawnTestContainer(t, "%s/configs/webdav_auth.json", true, false)
-	baseUrl := fmt.Sprintf("http://localhost:%d", port.Int())
+	baseUrl := fmt.Sprintf("http://localhost:%d", int(port.Num()))
 
 	// Test Unauth Connection
 	testWebdavUnauthConnection(t, baseUrl)
@@ -98,7 +98,7 @@ func TestWebdavAuth(t *testing.T) {
 func TestSmb(t *testing.T) {
 	port := spawnTestContainer(t, "%s/configs/smb.json", false, true)
 	host := "localhost"
-	smbPort := port.Int()
+	smbPort := int(port.Num())
 
 	// Test connection
 	testSmbConnection(t, host, smbPort)
@@ -126,7 +126,7 @@ func TestSmb(t *testing.T) {
 func TestSmbAuth(t *testing.T) {
 	port := spawnTestContainer(t, "%s/configs/smb_auth.json", false, true)
 	host := "localhost"
-	smbPort := port.Int()
+	smbPort := int(port.Num())
 
 	// Test that unauth connection fails
 	testSmbUnauthConnection(t, host, smbPort)
