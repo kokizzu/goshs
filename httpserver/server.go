@@ -233,34 +233,8 @@ func (fs *FileServer) SetupMux(mux *CustomMux, what string) string {
 			},
 		}
 
-		// Enforce mode flags on WebDAV verbs
-		wdGuard := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			switch r.Method {
-			case http.MethodPut, "MKCOL", "MOVE", "COPY":
-				if fs.ReadOnly {
-					http.Error(w, "read-only", http.StatusForbidden)
-					return
-				}
-			case http.MethodDelete:
-				if fs.ReadOnly || fs.UploadOnly || fs.NoDelete {
-					http.Error(w, "delete disabled", http.StatusForbidden)
-					return
-				}
-			case http.MethodGet, http.MethodHead:
-				if fs.UploadOnly {
-					http.Error(w, "upload-only", http.StatusForbidden)
-					return
-				}
-			}
-			// Enforce the .goshs ACL on the addressed resource (proper 401 with
-			// a challenge), then hand the request to the ACL-aware FileSystem via
-			// the context so recursive PROPFIND walks stay filtered too.
-			if !fs.webdavEnforceACL(w, r) {
-				return
-			}
-			ctx := context.WithValue(r.Context(), webdavCtxKey{}, r)
-			wdHandler.ServeHTTP(w, r.WithContext(ctx))
-		})
+		// Enforce mode flags and the .goshs ACL on WebDAV verbs.
+		wdGuard := fs.webdavGuard(wdHandler)
 
 		// Check Basic Auth and use middleware
 		if fs.User != "" || fs.Pass != "" {

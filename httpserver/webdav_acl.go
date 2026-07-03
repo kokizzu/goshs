@@ -3,6 +3,7 @@ package httpserver
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -25,6 +26,83 @@ func reqFromContext(ctx context.Context) *http.Request {
 // enforces the same .goshs ACL rules as the HTTP file server.
 func (fs *FileServer) newWebdavFileSystem() webdav.FileSystem {
 	return webdavACLFileSystem{srv: fs, root: webdav.Dir(fs.Webroot)}
+}
+
+// webdavGuard wraps the webdav handler with mode-flag enforcement (read-only /
+// upload-only / no-delete) and the .goshs ACL. It is the choke point for the
+// "webdav" mux and is exercised directly in tests.
+//
+// The verb gating reflects what golang.org/x/net/webdav actually does on disk:
+//   - MOVE always Rename()s the source (removing it from its original path) and,
+//     with Overwrite:T, RemoveAll()s an existing destination first. Both are
+//     deletions, so MOVE is blocked whenever deletion is disabled.
+//   - COPY to a fresh path only creates, but COPY with Overwrite (the library
+//     default unless the header is "F") onto an existing destination RemoveAll()s
+//     it first — also a deletion. That single case is gated behind the delete
+//     flags; a non-overwriting COPY stays allowed.
+func (fs *FileServer) webdavGuard(next http.Handler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPut, "MKCOL":
+			if fs.ReadOnly {
+				http.Error(w, "read-only", http.StatusForbidden)
+				return
+			}
+		case "COPY":
+			if fs.ReadOnly {
+				http.Error(w, "read-only", http.StatusForbidden)
+				return
+			}
+			if (fs.UploadOnly || fs.NoDelete) && r.Header.Get("Overwrite") != "F" && fs.webdavDestExists(r) {
+				http.Error(w, "overwrite disabled", http.StatusForbidden)
+				return
+			}
+		case "MOVE":
+			if fs.ReadOnly || fs.UploadOnly || fs.NoDelete {
+				http.Error(w, "move disabled", http.StatusForbidden)
+				return
+			}
+		case http.MethodDelete:
+			if fs.ReadOnly || fs.UploadOnly || fs.NoDelete {
+				http.Error(w, "delete disabled", http.StatusForbidden)
+				return
+			}
+		case http.MethodGet, http.MethodHead:
+			if fs.UploadOnly {
+				http.Error(w, "upload-only", http.StatusForbidden)
+				return
+			}
+		}
+		// Enforce the .goshs ACL on the addressed resource (proper 401 with a
+		// challenge), then hand the request to the ACL-aware FileSystem via the
+		// context so recursive PROPFIND walks stay filtered too.
+		if !fs.webdavEnforceACL(w, r) {
+			return
+		}
+		ctx := context.WithValue(r.Context(), webdavCtxKey{}, r)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	}
+}
+
+// webdavDestExists reports whether the Destination header of a COPY/MOVE
+// request already points at an existing resource inside the webroot. It is used
+// to distinguish an overwriting COPY (which deletes the destination) from a
+// harmless copy to a new path.
+func (fs *FileServer) webdavDestExists(r *http.Request) bool {
+	hdr := r.Header.Get("Destination")
+	if hdr == "" {
+		return false
+	}
+	u, err := url.Parse(hdr)
+	if err != nil {
+		return false
+	}
+	abs, err := sanitizePath(fs.Webroot, u.Path)
+	if err != nil {
+		return false
+	}
+	_, err = os.Stat(abs)
+	return err == nil
 }
 
 // webdavEnforceACL applies the .goshs ACL to the directly-addressed WebDAV

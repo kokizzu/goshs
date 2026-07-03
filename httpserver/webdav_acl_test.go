@@ -1,7 +1,6 @@
 package httpserver
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -22,13 +21,7 @@ func newWebdavTestHandler(fs *FileServer) http.Handler {
 		FileSystem: fs.newWebdavFileSystem(),
 		LockSystem: webdav.NewMemLS(),
 	}
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !fs.webdavEnforceACL(w, r) {
-			return
-		}
-		ctx := context.WithValue(r.Context(), webdavCtxKey{}, r)
-		wd.ServeHTTP(w, r.WithContext(ctx))
-	})
+	return fs.webdavGuard(wd)
 }
 
 // webdavACLTree builds a webroot with a public file and a password-protected
