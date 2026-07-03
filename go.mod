@@ -1,6 +1,6 @@
 module goshs.de/goshs/v2
 
-go 1.25.0
+go 1.26.4
 
 require (
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1
@@ -28,11 +28,11 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/studio-b12/gowebdav v0.10.0
 	github.com/testcontainers/testcontainers-go v0.37.0
-	golang.org/x/crypto v0.51.0
+	golang.org/x/crypto v0.52.0
 	golang.org/x/net v0.55.0
 	golang.org/x/term v0.43.0
 	golang.org/x/text v0.37.0
-	software.sslmate.com/src/go-pkcs12 v0.7.1
+	software.sslmate.com/src/go-pkcs12 v0.7.2
 )
 
 require (

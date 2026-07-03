@@ -2,8 +2,11 @@
 [![GitHub License](https://img.shields.io/github/license/goshs-labs/goshs)](https://github.com/goshs-labs/goshs/blob/main/LICENSE)
 ![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/goshs-labs/goshs)
 [![GitHub issues](https://img.shields.io/github/issues-raw/goshs-labs/goshs)](https://github.com/goshs-labs/goshs/issues)
+[![Downloads](https://img.shields.io/github/downloads/goshs-labs/goshs/total?label=Downloads&color=blue)](https://github.com/goshs-labs/goshs/releases)
+[![Stars](https://img.shields.io/github/stars/goshs-labs/goshs?style=flat)](https://github.com/goshs-labs/goshs/stargazers)
 ![goreleaser](https://github.com/goshs-labs/goshs/workflows/goreleaser/badge.svg)
 [![codecov](https://codecov.io/gh/goshs-labs/goshs/branch/main/graph/badge.svg)](https://codecov.io/gh/goshs-labs/goshs)
+[![OpenSSF Scorecard](https://img.shields.io/ossf-scorecard/github.com/goshs-labs/goshs?label=openssf+scorecard&style=flat)](https://scorecard.dev/viewer/?uri=github.com/goshs-labs/goshs)
 
 <img src="https://github.com/patrickhener/image-cdn/blob/main/goshs-banner-light.png?raw=true" alt="goshs-logo" height="100">
 

@@ -9,7 +9,7 @@
 # that path; buildx overrides it per build. It selects the builder node only and
 # never affects the produced binary's architecture (that is TARGETARCH below).
 ARG BUILDPLATFORM=linux/amd64
-FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine@sha256:3ad57304ad93bbec8548a0437ad9e06a455660655d9af011d58b993f6f615648 AS builder
 
 # Provided automatically by buildx for each target platform.
 ARG TARGETOS
@@ -38,7 +38,7 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} \
     go build -trimpath -ldflags="-s -w" ${COVER} -o /goshs .
 
 # Stage 2: Create a minimal runtime image
-FROM alpine:latest
+FROM alpine:latest@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
 
 # Set the Current Working Directory inside the container
 WORKDIR /root/
