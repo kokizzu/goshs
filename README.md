@@ -7,6 +7,7 @@
 ![goreleaser](https://github.com/goshs-labs/goshs/workflows/goreleaser/badge.svg)
 [![codecov](https://codecov.io/gh/goshs-labs/goshs/branch/main/graph/badge.svg)](https://codecov.io/gh/goshs-labs/goshs)
 [![OpenSSF Scorecard](https://img.shields.io/ossf-scorecard/github.com/goshs-labs/goshs?label=openssf+scorecard&style=flat)](https://scorecard.dev/viewer/?uri=github.com/goshs-labs/goshs)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/13477/badge)](https://www.bestpractices.dev/projects/13477)
 
 <img src="https://github.com/patrickhener/image-cdn/blob/main/goshs-banner-light.png?raw=true" alt="goshs-logo" height="100">
 
