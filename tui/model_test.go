@@ -472,3 +472,84 @@ func TestSaveSMTPAttachmentsNone(t *testing.T) {
 		t.Fatalf("unexpected flash: %q", m.flash)
 	}
 }
+
+func runes(s string) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)} }
+
+// Pressing 'p' opens the password popup masked; 'u' reveals the plaintext and
+// 'esc' dismisses it.
+func TestPasswordPopupMaskRevealClose(t *testing.T) {
+	m := newModel(&options.Options{Webroot: "/srv", Username: "patrick", Password: "correcthorse"}, nil, nil, nil, nil, nil, nil)
+	m.width, m.height = 80, 24
+
+	m.handleKey(runes("p"))
+	if !m.showPassword || m.passwordSeen {
+		t.Fatalf("after 'p': showPassword=%v passwordSeen=%v, want true/false", m.showPassword, m.passwordSeen)
+	}
+	if pop := m.passwordPopup(); strings.Contains(pop, "correcthorse") || !strings.Contains(pop, "•") {
+		t.Fatalf("masked popup should hide plaintext behind dots, got:\n%s", pop)
+	}
+
+	m.handleKey(runes("u"))
+	if !m.passwordSeen {
+		t.Fatalf("after 'u': passwordSeen=false, want true")
+	}
+	if pop := m.passwordPopup(); !strings.Contains(pop, "correcthorse") {
+		t.Fatalf("revealed popup should show plaintext, got:\n%s", pop)
+	}
+
+	// 'u' again re-masks.
+	m.handleKey(runes("u"))
+	if m.passwordSeen {
+		t.Fatalf("second 'u' should re-mask, passwordSeen=true")
+	}
+
+	m.handleKey(tea.KeyMsg{Type: tea.KeyEsc})
+	if m.showPassword {
+		t.Fatalf("esc should close the popup")
+	}
+}
+
+// 'q' inside the popup dismisses it instead of quitting goshs.
+func TestPasswordPopupQuitDismisses(t *testing.T) {
+	m := newModel(&options.Options{Webroot: "/srv", Username: "u", Password: "pw"}, nil, nil, nil, nil, nil, nil)
+	m.handleKey(runes("p"))
+	_, cmd := m.handleKey(runes("q"))
+	if m.showPassword {
+		t.Fatalf("'q' should close the popup")
+	}
+	if cmd != nil {
+		t.Fatalf("'q' in popup should not emit a quit command")
+	}
+}
+
+// Without basic-auth configured, 'p' does nothing.
+func TestPasswordPopupNoAuthNoop(t *testing.T) {
+	m := newModel(&options.Options{Webroot: "/srv"}, nil, nil, nil, nil, nil, nil)
+	m.handleKey(runes("p"))
+	if m.showPassword {
+		t.Fatalf("'p' with no password set should not open the popup")
+	}
+}
+
+// In the GENERATOR pane 'p' edits LPORT, so it must not open the popup.
+func TestPasswordPopupNotOpenedInGenerator(t *testing.T) {
+	m := newModel(&options.Options{Webroot: "/srv", Username: "u", Password: "pw"}, nil, nil, nil, nil, nil, nil)
+	m.active = paneGenerator
+	m.handleKey(runes("p"))
+	if m.showPassword {
+		t.Fatalf("'p' in the generator pane should edit LPORT, not open the popup")
+	}
+	if !m.inputActive {
+		t.Fatalf("'p' in the generator pane should begin the LPORT input")
+	}
+}
+
+// A pre-hashed (bcrypt) secret is flagged as unrecoverable plaintext.
+func TestPasswordPopupHashedFlag(t *testing.T) {
+	m := newModel(&options.Options{Webroot: "/srv", Username: "u", Password: "$2a$12$abcdefghijklmnopqrstuv"}, nil, nil, nil, nil, nil, nil)
+	m.showPassword = true
+	m.passwordSeen = true
+	if pop := m.passwordPopup(); !strings.Contains(pop, "bcrypt hash") {
+		t.Fatalf("hashed password popup should note the bcrypt hash, got:\n%s", pop)
+	}
+}

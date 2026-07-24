@@ -167,6 +167,13 @@ type model struct {
 	genIP   string   // LHOST substituted into the template
 	genPort string   // LPORT substituted into the template
 	genEnc  encoding // output encoding (none / url / base64)
+
+	// Password reveal popup. The status bar shows the auth *user* but never the
+	// password; this modal overlay lets the operator look it up — handy when the
+	// password was generated inline at launch (e.g. -b "user:$(xkcdpass …)") and
+	// is otherwise unknown. Masked on open; 'u' toggles the plaintext.
+	showPassword bool // popup overlay is open
+	passwordSeen bool // plaintext uncovered (vs. masked with dots)
 }
 
 func newModel(opts *options.Options, hub *ws.Hub, mgr *catcher.Manager, sub chan []byte, clip *clipboard.Clipboard, tunnelURL func() string, ttlC <-chan time.Time) *model {
@@ -256,6 +263,12 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// The password popup is a modal overlay: while it is open it captures every
+	// key (so 'q' dismisses the popup rather than quitting goshs) and nothing
+	// below runs.
+	if m.showPassword {
+		return m.handlePasswordKey(msg)
+	}
 	// While typing a new clipboard entry, keys feed the input buffer instead of
 	// driving navigation.
 	if m.inputActive {
@@ -371,6 +384,15 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.active == paneSMTP {
 			m.saveSMTPAttachments()
 		}
+	case "p":
+		// Open the password reveal popup. Only meaningful when basic-auth
+		// credentials are set — the status bar shows the user but not the
+		// password. (In the GENERATOR pane 'p' edits LPORT and is consumed by
+		// handleGeneratorKey before reaching here.)
+		if m.opts.Password != "" {
+			m.showPassword = true
+			m.passwordSeen = false
+		}
 	case "enter":
 		// On a reverse-shell session row, ⏎ attaches; otherwise toggle detail.
 		if m.active == paneShells {
@@ -385,6 +407,22 @@ func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "esc":
 		m.detail = false
+	}
+	return m, nil
+}
+
+// handlePasswordKey drives the modal password popup: 'u' toggles the plaintext,
+// 'y'/'c' copy it to the operator's clipboard, and esc/q/p (or enter) dismiss.
+// It captures all other keys so navigation underneath stays frozen while open.
+func (m *model) handlePasswordKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "u":
+		m.passwordSeen = !m.passwordSeen
+	case "y", "c":
+		m.copyToClipboard(m.opts.Password, "copied password to clipboard")
+	case "esc", "q", "p", "enter":
+		m.showPassword = false
+		m.passwordSeen = false
 	}
 	return m, nil
 }
@@ -1344,6 +1382,15 @@ var (
 	inputStyle    = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(nord0)).Background(lipgloss.Color(nord13))
 	scrollThumb   = lipgloss.NewStyle().Foreground(lipgloss.Color(nord8))
 	scrollTrack   = lipgloss.NewStyle().Foreground(lipgloss.Color(nord3))
+
+	// Password reveal popup.
+	popupBox   = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color(nord8)).Background(lipgloss.Color(nord1)).Foreground(lipgloss.Color(nord4)).Padding(1, 3)
+	popupTitle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(nord8))
+	popupLabel = lipgloss.NewStyle().Foreground(lipgloss.Color(nord3))
+	popupValue = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(nord6))
+	popupMask  = lipgloss.NewStyle().Foreground(lipgloss.Color(nord3))
+	popupWarn  = lipgloss.NewStyle().Foreground(lipgloss.Color(nord13))
+	popupHint  = lipgloss.NewStyle().Foreground(lipgloss.Color(nord3))
 )
 
 // bannerArt is the goshs figlet logo, mirroring logger.PrintBanner so the
@@ -1508,6 +1555,11 @@ func (m *model) View() string {
 		bodyH = 1
 	}
 	body := m.bodyView(bodyH)
+	// The password popup is drawn as an overlay centered in the body region,
+	// leaving the banner/tabs/status chrome in place around it.
+	if m.showPassword {
+		body = lipgloss.Place(m.width, bodyH, lipgloss.Center, lipgloss.Center, m.passwordPopup())
+	}
 	frame := strings.Join([]string{banner, tabs, body, status}, "\n")
 	// Flush a pending clipboard copy by appending its OSC 52 sequence to the
 	// frame exactly once. OSC 52 does not move the cursor or occupy cells, so it
@@ -1724,6 +1776,46 @@ func (m *model) tunnel() string {
 	return m.tunnelURL()
 }
 
+// passwordPopup renders the modal box shown over the body when 'p' is pressed.
+// The password is masked with dots until the operator presses 'u'. A bcrypt
+// hash (from -b with a pre-hashed secret) is flagged since it cannot be undone
+// to the plaintext.
+func (m *model) passwordPopup() string {
+	o := m.opts
+	user := o.Username
+	if user == "" {
+		user = "(none)"
+	}
+
+	hashed := strings.Contains(o.Password, "$2a$") || strings.Contains(o.Password, "$2b$") || strings.Contains(o.Password, "$2y$")
+
+	var pwLine string
+	if m.passwordSeen {
+		pwLine = popupValue.Render(o.Password)
+	} else {
+		n := len([]rune(o.Password))
+		if n > 32 {
+			n = 32 // cap the mask so a long bcrypt hash does not blow out the box
+		}
+		pwLine = popupMask.Render(strings.Repeat("•", n))
+	}
+
+	var b strings.Builder
+	b.WriteString(popupTitle.Render("🔒 Basic Auth Credentials"))
+	b.WriteString("\n\n")
+	b.WriteString(popupLabel.Render("User:     ") + popupValue.Render(user))
+	b.WriteString("\n")
+	b.WriteString(popupLabel.Render("Password: ") + pwLine)
+	if hashed {
+		b.WriteString("\n")
+		b.WriteString(popupWarn.Render("stored as a bcrypt hash — plaintext unknown"))
+	}
+	b.WriteString("\n\n")
+	b.WriteString(popupHint.Render("u show/hide · y copy · esc close"))
+
+	return popupBox.Render(b.String())
+}
+
 func (m *model) controlsHint() string {
 	if m.detail {
 		switch m.active {
@@ -1734,17 +1826,26 @@ func (m *model) controlsHint() string {
 		}
 		return "↑↓ event · PgUp/PgDn scroll · g/G newest/oldest · e/E export · esc close · q quit"
 	}
-	switch m.active {
-	case paneGenerator:
+	// The GENERATOR pane owns 'p' (LPORT), so it never advertises the password
+	// popup; every other pane appends "p pass" when basic-auth is configured.
+	if m.active == paneGenerator {
 		return "⇄ Tab/←→ panes · ↑↓ shell · i LHOST · p LPORT · n encoding · y/c copy · q quit"
-	case paneClipboard:
-		return "⇄ Tab/←→ panes · ↑↓ scroll · ⏎ view · a add · d delete · C clear · e export · q quit"
-	case paneShells:
-		return "⇄ Tab/←→ panes · ↑↓ select · ⏎/i attach · u/U upgrade · a start · r restart · d stop/kill · q quit"
-	case paneSMTP:
-		return "⇄ Tab/←→ panes · ↑↓ scroll · ⏎ detail · s save attachments · e/E export · q quit"
 	}
-	return "⇄ Tab/←→ panes · ↑↓ scroll · ⏎ detail · g/G top/bottom · e/E export · q quit"
+	var hint string
+	switch m.active {
+	case paneClipboard:
+		hint = "⇄ Tab/←→ panes · ↑↓ scroll · ⏎ view · a add · d delete · C clear · e export · q quit"
+	case paneShells:
+		hint = "⇄ Tab/←→ panes · ↑↓ select · ⏎/i attach · u/U upgrade · a start · r restart · d stop/kill · q quit"
+	case paneSMTP:
+		hint = "⇄ Tab/←→ panes · ↑↓ scroll · ⏎ detail · s save attachments · e/E export · q quit"
+	default:
+		hint = "⇄ Tab/←→ panes · ↑↓ scroll · ⏎ detail · g/G top/bottom · e/E export · q quit"
+	}
+	if m.opts.Password != "" {
+		hint += " · p pass"
+	}
+	return hint
 }
 
 // bodyView renders exactly h lines for the active pane so the status bar stays

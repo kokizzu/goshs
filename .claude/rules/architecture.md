@@ -154,6 +154,16 @@ maintenance), not packaging constraints.
   dispatch and tick-based refresh; consumes live events from the ws hub.
 - Panes include EVENTS, SHELLS, CLIPBOARD, and **GENERATOR** (`paneGenerator`).
 - Colors use the Nord palette constants (`nord4`, `nord7`, …) — do not hardcode ANSI.
+- **Password reveal popup:** the status bar shows the auth *user* but never the
+  password. Pressing **`p`** (in any pane except GENERATOR, where `p` edits LPORT)
+  opens a modal overlay showing the basic-auth credentials — masked with dots
+  until **`u`** toggles the plaintext; **`y`/`c`** copy it; **esc/q** close. Handled
+  by `handlePasswordKey` (intercepted at the top of `handleKey`, so it's fully
+  modal — `q` dismisses the popup instead of quitting) and rendered by
+  `passwordPopup()` via `lipgloss.Place` over the body region. Only offered when
+  `opts.Password != ""`; a bcrypt-hashed secret is shown but flagged as
+  unrecoverable. Useful when the password was generated inline at launch
+  (`-b "user:$(xkcdpass …)"`) and is otherwise unknown to the operator.
 - Generator pane: `tui/generator.go` + the `generator*` methods in `tui.go`
   (`handleGeneratorKey`, `generatorView`, `generatorList`, `generatorOutput`).
   Keys: ↑↓/jk select, g/G first/last, i LHOST, p LPORT, n cycle encoding,
