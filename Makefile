@@ -1,5 +1,13 @@
 .PHONY: generate security fmt fmt-check vet check new-version run-unit run-unit-no-network run-integration clean-tests run-tests run install clean
 
+# `sed -i` is not portable: GNU sed takes no argument after -i, while BSD/macOS
+# sed requires a (possibly empty) backup-suffix argument. Detect which one we have.
+ifeq ($(shell sed --version >/dev/null 2>&1 && echo gnu),gnu)
+SED_INPLACE := sed -i
+else
+SED_INPLACE := sed -i ''
+endif
+
 # esbuild and sass needed
 generate:
 	@echo "[*] Bundling JS with esbuild"
@@ -37,11 +45,17 @@ ifndef VERSION
 	$(error Usage: make new-version VERSION=vX.Y.Z)
 endif
 	@echo "Updating version to $(VERSION)..."
-	@sed -i 's/var GoshsVersion = "v[^"]*"/var GoshsVersion = "$(VERSION)"/' goshsversion/version.go
+	@$(SED_INPLACE) 's/var GoshsVersion = "v[^"]*"/var GoshsVersion = "$(VERSION)"/' goshsversion/version.go
 	@SPECVER=$$(echo "$(VERSION)" | sed 's/^v//'); \
 	DATE=$$(date '+%a %b %d %Y'); \
-	sed -i "s|^Version:.*|Version:        $$SPECVER|" packaging/rpm/goshs.spec; \
-	sed -i "/^%changelog/a * $$DATE Patrick Hener <patrickhener@gmx.de> - $$SPECVER-1\n- Add new version $(VERSION)" packaging/rpm/goshs.spec
+	$(SED_INPLACE) "s|^Version:.*|Version:        $$SPECVER|" packaging/rpm/goshs.spec; \
+	awk -v date="$$DATE" -v specver="$$SPECVER" -v ver="$(VERSION)" '\
+		{ print } \
+		/^%changelog/ { \
+			print "* " date " Patrick Hener <patrickhener@gmx.de> - " specver "-1"; \
+			print "- Add new version " ver; \
+		}' packaging/rpm/goshs.spec > packaging/rpm/goshs.spec.tmp && \
+		mv packaging/rpm/goshs.spec.tmp packaging/rpm/goshs.spec
 	@git add goshsversion/version.go packaging/rpm/goshs.spec
 	@git commit -m "New version $(VERSION)"
 	@git push
