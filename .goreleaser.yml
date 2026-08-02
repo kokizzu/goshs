@@ -121,21 +121,21 @@ winget:
 checksum:
   name_template: "checksums.txt"
 
-# Keyless (OIDC) cosign signature over the checksums file. Produces
-# checksums.txt.sig + checksums.txt.pem alongside the release, which is what
-# OpenSSF Scorecard's Signed-Releases check looks for. Requires cosign on PATH
-# and `id-token: write` in the release job (see .github/workflows/release.yml).
-# cosign v3 defaults to the new bundle format, under which --output-signature /
-# --output-certificate are ignored and it writes to --bundle instead (empty ->
-# fatal). --new-bundle-format=false keeps the legacy .sig/.pem outputs above.
+# Keyless (OIDC) cosign signature over the checksums file. cosign v3 uses the
+# Sigstore "new bundle" format, producing a single checksums.txt.bundle that
+# carries the certificate, signature, and Rekor inclusion proof together.
+# Requires cosign on PATH and `id-token: write` in the release job (see
+# .github/workflows/release.yml). Verify with:
+#   cosign verify-blob --bundle checksums.txt.bundle \
+#     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+#     --certificate-identity-regexp '^https://github.com/goshs-labs/goshs/' \
+#     checksums.txt
 signs:
   - cmd: cosign
-    certificate: "${artifact}.pem"
+    signature: "${artifact}.bundle"
     args:
       - sign-blob
-      - "--new-bundle-format=false"
-      - "--output-certificate=${certificate}"
-      - "--output-signature=${signature}"
+      - "--bundle=${signature}"
       - "${artifact}"
       - "--yes"
     artifacts: checksum
