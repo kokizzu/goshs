@@ -125,11 +125,15 @@ checksum:
 # checksums.txt.sig + checksums.txt.pem alongside the release, which is what
 # OpenSSF Scorecard's Signed-Releases check looks for. Requires cosign on PATH
 # and `id-token: write` in the release job (see .github/workflows/release.yml).
+# cosign v3 defaults to the new bundle format, under which --output-signature /
+# --output-certificate are ignored and it writes to --bundle instead (empty ->
+# fatal). --new-bundle-format=false keeps the legacy .sig/.pem outputs above.
 signs:
   - cmd: cosign
     certificate: "${artifact}.pem"
     args:
       - sign-blob
+      - "--new-bundle-format=false"
       - "--output-certificate=${certificate}"
       - "--output-signature=${signature}"
       - "${artifact}"
