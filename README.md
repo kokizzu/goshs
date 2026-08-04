@@ -171,7 +171,7 @@ Join the Discord Community and start connecting.
 
 # Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=goshs-labs/goshs&type=date&legend=top-left)](https://www.star-history.com/#goshs-labs/goshs&type=date&legend=top-left)
+[![Star History Chart](https://api.star-history.com/chart?repos=goshs-labs/goshs&type=date&legend=top-left&sealed_token=JZUOT38xrIEwfInuMDamZ5UcOjq1_fW_qLnmQ2JaEH1ng6cDwLM5ri6dFhpyYYELzQZd3wNbvATwUX3ZhoQVOA44BJDOgoZjmvY-0w_JPWoyGsyuT3ISKw)](https://www.star-history.com/?repos=goshs-labs%2Fgoshs&type=date&legend=top-left)
 
 # Credits
 
