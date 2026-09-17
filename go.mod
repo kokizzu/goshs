@@ -27,10 +27,10 @@ require (
 	github.com/stretchr/testify v1.12.1
 	github.com/studio-b12/gowebdav v0.13.0
 	github.com/testcontainers/testcontainers-go v0.44.0
-	golang.org/x/crypto v0.56.0
+	golang.org/x/crypto v0.57.0
 	golang.org/x/net v0.58.0
 	golang.org/x/term v0.46.0
-	golang.org/x/text v0.41.0
+	golang.org/x/text v0.42.0
 	software.sslmate.com/src/go-pkcs12 v0.7.3
 )
 
