@@ -34,7 +34,7 @@ func sanitizePath(root, requestPath string) (string, error) {
 
 func removeItem(sSlice []item, name string) []item {
 	for idx, sliceItem := range sSlice {
-		if name == sliceItem.Name {
+		if strings.EqualFold(name, sliceItem.Name) {
 			return append(sSlice[:idx], sSlice[idx+1:]...)
 		}
 	}

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 )
 
 // ProtocolACL enforces the per-directory .goshs ACL for file-transfer protocols
@@ -22,6 +23,16 @@ type ProtocolACL struct {
 	fs *FileServer
 }
 
+// blockListed reports whether name appears in the block list using
+// case-insensitive comparison, so that alternate-case spellings (e.g.
+// SECRET.TXT for an on-disk secret.txt) are caught on case-insensitive
+// filesystems (Windows NTFS, macOS APFS/HFS+) — GHSA-3x28-6v7h-gg87.
+func blockListed(block []string, name string) bool {
+	return slices.ContainsFunc(block, func(s string) bool {
+		return strings.EqualFold(s, name)
+	})
+}
+
 // NewProtocolACL builds a ProtocolACL bound to webroot. Only the webroot is
 // needed: findEffectiveACL/findSpecialFile read it plus the .goshs files on disk
 // and touch no other FileServer state.
@@ -36,7 +47,7 @@ func NewProtocolACL(webroot string) *ProtocolACL {
 // by its own.
 func (p *ProtocolACL) Allowed(absPath string) bool {
 	// Never expose the ACL config file itself — it holds the bcrypt hashes.
-	if filepath.Base(absPath) == ".goshs" {
+	if strings.EqualFold(filepath.Base(absPath), ".goshs") {
 		return false
 	}
 	governing := absPath
@@ -50,7 +61,7 @@ func (p *ProtocolACL) Allowed(absPath string) bool {
 	if acl.Auth != "" {
 		return false
 	}
-	if slices.Contains(acl.Block, filepath.Base(absPath)) {
+	if blockListed(acl.Block, filepath.Base(absPath)) {
 		return false
 	}
 	return true
@@ -65,10 +76,10 @@ func (p *ProtocolACL) FilterListing(dir string, infos []os.FileInfo) []os.FileIn
 	filtered := infos[:0]
 	for _, fi := range infos {
 		name := fi.Name()
-		if name == ".goshs" {
+		if strings.EqualFold(name, ".goshs") {
 			continue
 		}
-		if slices.Contains(acl.Block, name) {
+		if blockListed(acl.Block, name) {
 			continue
 		}
 		if fi.IsDir() {

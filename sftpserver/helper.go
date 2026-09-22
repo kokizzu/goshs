@@ -9,6 +9,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -51,8 +52,7 @@ func loadAuthorizedKeys(path string) (map[string]bool, error) {
 // Sanitize client path to restrict to sftpRoot
 func sanitizePath(clientPath string, sftpRoot string) (string, error) {
 	if runtime.GOOS == "windows" {
-		clientPath = rewritePathWindows(clientPath)
-		sftpRoot = rewritePathWindows(sftpRoot)
+		return sanitizePathWindows(clientPath, sftpRoot)
 	}
 	clean := filepath.Clean("/" + strings.TrimLeft(clientPath, "/"))
 	clean = strings.TrimPrefix(clean, sftpRoot)
@@ -62,6 +62,59 @@ func sanitizePath(clientPath string, sftpRoot string) (string, error) {
 		return "", errors.New("access denied: outside of webroot")
 	}
 	return abs, nil
+}
+
+// sanitizePathWindows handles path sanitization on Windows, where the SFTP
+// library reports the Windows root directory verbatim (e.g. C:\Users\user) to
+// clients, and clients echo it back on subsequent requests. The Unix-style
+// prefix-strip used by sanitizePath doesn't work for these absolute Windows
+// paths, so this function normalises them to root-relative before the
+// traversal check (issue #292 / SFTP listing failure on Windows).
+//
+// Internally all paths are normalised to forward-slash form so path.Clean can
+// do traversal-safe joining in an OS-independent way (the function is tested
+// on Linux too).
+func sanitizePathWindows(clientPath string, sftpRoot string) (string, error) {
+	// Normalise to forward-slash form for path.Clean.
+	// rewritePathWindows may have been called by the caller; calling it here
+	// as well is idempotent.
+	norm := func(p string) string {
+		return strings.ReplaceAll(rewritePathWindows(p), "\\", "/")
+	}
+	client := path.Clean(norm(clientPath))
+	root := path.Clean(norm(sftpRoot))
+
+	var rel string
+	switch {
+	case client == "." || clientPath == "":
+		// Empty or self-referential → root of the share.
+		rel = "."
+	case strings.EqualFold(client, root):
+		// Client echoed back the exact Windows root path (case-insensitive).
+		rel = "."
+	case strings.HasPrefix(strings.ToLower(client), strings.ToLower(root)+"/"):
+		// Absolute Windows path inside root (e.g. C:/Users/user/subdir).
+		rel = client[len(root)+1:]
+	default:
+		// Deny any other absolute Windows path (different drive or volume) to
+		// prevent path.Join from concatenating it inside the root.
+		if len(client) >= 2 && client[1] == ':' {
+			return "", errors.New("access denied: outside of webroot")
+		}
+		// Unix-style root-relative (/subdir) or plain relative path.
+		rel = strings.TrimLeft(client, "/")
+		if rel == "" {
+			rel = "."
+		}
+	}
+
+	abs := path.Join(root, rel)
+	rootLow := strings.ToLower(root)
+	absLow := strings.ToLower(abs)
+	if absLow != rootLow && !strings.HasPrefix(absLow, rootLow+"/") {
+		return "", errors.New("access denied: outside of webroot")
+	}
+	return strings.ReplaceAll(abs, "/", "\\"), nil
 }
 
 // simpleListerAt is a simple implementation of sftp.ListerAt

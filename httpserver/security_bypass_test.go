@@ -180,6 +180,97 @@ func TestUpload_FolderPath_DotDot_NoEscape(t *testing.T) {
 	require.Truef(t, os.IsNotExist(err), "file escaped the webroot at %s", escape)
 }
 
+// ─── GHSA-3x28-6v7h-gg87: case-insensitive ACL enforcement ──────────────────
+
+// blockListed must match alternate-case spellings so that requests like
+// /SECRET.TXT are blocked when the ACL has "secret.txt" (GHSA-3x28-6v7h-gg87).
+func TestBlockListed_CaseInsensitive(t *testing.T) {
+	block := []string{"secret.txt"}
+	require.True(t, blockListed(block, "secret.txt"))
+	require.True(t, blockListed(block, "SECRET.TXT"))
+	require.True(t, blockListed(block, "Secret.Txt"))
+	require.False(t, blockListed(block, "other.txt"))
+}
+
+// On a case-insensitive filesystem sendFile receives the filename in the
+// attacker's casing (os.File.Stat().Name() returns the basename of the path
+// passed to os.Open). Before the fix the case-sensitive comparison let it
+// through. A symlink makes the bypass reproducible on Linux.
+func TestSendFile_BlockedByACL_AlternateCasing(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "secret.txt"), []byte("TOP-SECRET"), 0644))
+	require.NoError(t, os.Symlink(filepath.Join(dir, "secret.txt"), filepath.Join(dir, "SECRET.TXT")))
+	fs, cleanup := newTestFileServer(t, dir)
+	defer cleanup()
+
+	f, err := os.Open(filepath.Join(dir, "SECRET.TXT"))
+	require.NoError(t, err)
+	defer f.Close()
+
+	r := httptest.NewRequest(http.MethodGet, "/SECRET.TXT", nil)
+	w := httptest.NewRecorder()
+	fs.sendFile(w, r, f, configFile{Block: []string{"secret.txt"}})
+
+	require.Equal(t, http.StatusNotFound, w.Code)
+	require.NotContains(t, w.Body.String(), "TOP-SECRET")
+}
+
+// The .goshs ACL file must never be served regardless of letter case.
+func TestSendFile_GoshsACLFile_AlternateCasing(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".goshs"), []byte(`{"block":["secret.txt"]}`), 0644))
+	require.NoError(t, os.Symlink(filepath.Join(dir, ".goshs"), filepath.Join(dir, ".GOSHS")))
+	fs, cleanup := newTestFileServer(t, dir)
+	defer cleanup()
+
+	f, err := os.Open(filepath.Join(dir, ".GOSHS"))
+	require.NoError(t, err)
+	defer f.Close()
+
+	r := httptest.NewRequest(http.MethodGet, "/.GOSHS", nil)
+	w := httptest.NewRecorder()
+	fs.sendFile(w, r, f, configFile{})
+
+	require.Equal(t, http.StatusNotFound, w.Code)
+	require.NotContains(t, w.Body.String(), `"block":[`)
+}
+
+// Uploading a file named ".GOSHS" (alternate case) must be blocked.
+func TestUpload_GoshsFile_AlternateCasing_Blocked(t *testing.T) {
+	webroot := t.TempDir()
+	fs, cleanup := newTestFileServer(t, webroot)
+	defer cleanup()
+
+	body, ctype := multipartUpload(t, ".GOSHS", `{"block":["x"]}`)
+	r := httptest.NewRequest(http.MethodPost, "/upload", body)
+	r.Header.Set("Content-Type", ctype)
+	r.Header.Set("X-CSRF-Token", "test-csrf")
+	w := httptest.NewRecorder()
+
+	fs.upload(w, r)
+
+	_, err := os.Stat(filepath.Join(webroot, ".GOSHS"))
+	require.Truef(t, os.IsNotExist(err), "upload of alternate-case .GOSHS must be blocked")
+}
+
+// A .GOSHS component anywhere in a folder-upload path must also be blocked.
+func TestUpload_FolderPath_GoshsComponent_AlternateCasing_Blocked(t *testing.T) {
+	webroot := t.TempDir()
+	fs, cleanup := newTestFileServer(t, webroot)
+	defer cleanup()
+
+	body, ctype := multipartUpload(t, "sub/.GOSHS", `{"block":["x"]}`)
+	r := httptest.NewRequest(http.MethodPost, "/upload", body)
+	r.Header.Set("Content-Type", ctype)
+	r.Header.Set("X-CSRF-Token", "test-csrf")
+	w := httptest.NewRecorder()
+
+	fs.upload(w, r)
+
+	_, err := os.Stat(filepath.Join(webroot, "sub", ".GOSHS"))
+	require.Truef(t, os.IsNotExist(err), "folder upload with alternate-case .GOSHS component must be blocked")
+}
+
 // A .goshs component anywhere in an uploaded folder path must be rejected, so a
 // folder upload cannot plant or shadow an ACL file.
 func TestUpload_FolderPath_GoshsComponent_Blocked(t *testing.T) {
