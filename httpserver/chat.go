@@ -85,7 +85,7 @@ func (fs *FileServer) chatUpload(w http.ResponseWriter, req *http.Request) {
 		// overwrite each other or existing served files.
 		slice := strings.Split(part.FileName(), "/")
 		clean := filepath.Base(slice[len(slice)-1])
-		if clean == "" || clean == "." || clean == ".." || clean == ".goshs" {
+		if clean == "" || clean == "." || clean == ".." || strings.EqualFold(clean, ".goshs") {
 			fs.handleError(w, req, fmt.Errorf("invalid filename"), http.StatusBadRequest)
 			return
 		}

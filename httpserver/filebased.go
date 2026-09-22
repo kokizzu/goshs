@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 func (fs *FileServer) findSpecialFile(folder string) (configFile, error) {
@@ -23,7 +24,7 @@ func (fs *FileServer) findSpecialFile(folder string) (configFile, error) {
 	}
 
 	for _, fi := range fis {
-		if fi.Name() == ".goshs" {
+		if strings.EqualFold(fi.Name(), ".goshs") {
 			openFile := filepath.Join(file.Name(), fi.Name())
 
 			// disable G304 (CWE-22): Potential file inclusion via variable

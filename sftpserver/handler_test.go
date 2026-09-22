@@ -444,6 +444,51 @@ func TestRewritePathWindows(t *testing.T) {
 	require.Equal(t, "file.txt", rewritePathWindows("file.txt"))
 }
 
+// ─── sanitizePathWindows (issue #292) ────────────────────────────────────────
+
+func TestSanitizePathWindows_ExactRoot(t *testing.T) {
+	// Client echoes back the Windows root path advertised by WithStartDirectory.
+	path, err := sanitizePathWindows(`C:\Users\user`, `C:\Users\user`)
+	require.NoError(t, err)
+	require.Equal(t, `C:\Users\user`, path)
+}
+
+func TestSanitizePathWindows_AbsoluteSubdir(t *testing.T) {
+	path, err := sanitizePathWindows(`C:\Users\user\Documents`, `C:\Users\user`)
+	require.NoError(t, err)
+	require.Equal(t, `C:\Users\user\Documents`, path)
+}
+
+func TestSanitizePathWindows_UnixStyleRoot(t *testing.T) {
+	// SFTP clients using "/" after the server reports "/" as start dir.
+	path, err := sanitizePathWindows("/", `C:\Users\user`)
+	require.NoError(t, err)
+	require.Equal(t, `C:\Users\user`, path)
+}
+
+func TestSanitizePathWindows_UnixStyleSubdir(t *testing.T) {
+	path, err := sanitizePathWindows("/subdir/file.txt", `C:\Users\user`)
+	require.NoError(t, err)
+	require.Equal(t, `C:\Users\user\subdir\file.txt`, path)
+}
+
+func TestSanitizePathWindows_TraversalBlocked(t *testing.T) {
+	_, err := sanitizePathWindows(`../../etc/passwd`, `C:\Users\user`)
+	require.Error(t, err)
+}
+
+func TestSanitizePathWindows_AbsoluteOutsideRoot(t *testing.T) {
+	_, err := sanitizePathWindows(`C:\Windows\System32`, `C:\Users\user`)
+	require.Error(t, err)
+}
+
+func TestSanitizePathWindows_CaseInsensitiveRoot(t *testing.T) {
+	// Windows paths are case-insensitive.
+	path, err := sanitizePathWindows(`c:\users\user`, `C:\Users\user`)
+	require.NoError(t, err)
+	require.Equal(t, `C:\Users\user`, path)
+}
+
 // ─── sanitizePath edge cases ─────────────────────────────────────────────────
 
 func TestSanitizePath_ExactRoot(t *testing.T) {

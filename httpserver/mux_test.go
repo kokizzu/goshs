@@ -235,6 +235,13 @@ func TestRemoveItem_NotFound(t *testing.T) {
 	require.Len(t, result, 2)
 }
 
+func TestRemoveItem_CaseInsensitive(t *testing.T) {
+	items := []item{{Name: "secret.txt"}, {Name: "other.txt"}}
+	result := removeItem(items, "SECRET.TXT")
+	require.Len(t, result, 1)
+	require.Equal(t, "other.txt", result[0].Name)
+}
+
 // ─── handleInfo tests ────────────────────────────────────────────────────────
 
 func TestHandleInfo(t *testing.T) {

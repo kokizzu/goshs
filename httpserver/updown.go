@@ -48,7 +48,7 @@ func (fs *FileServer) put(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// Block overwriting the .goshs ACL file
-	if filepath.Base(savepath) == ".goshs" {
+	if strings.EqualFold(filepath.Base(savepath), ".goshs") {
 		fs.handleError(w, req, fmt.Errorf("cannot overwrite ACL file"), http.StatusForbidden)
 		return
 	}
@@ -181,7 +181,7 @@ func (fs *FileServer) upload(w http.ResponseWriter, req *http.Request) {
 			logger.Warnf("blocked upload with invalid path %q", rawName)
 			continue
 		}
-		if slices.Contains(strings.Split(rel, string(os.PathSeparator)), ".goshs") {
+		if slices.ContainsFunc(strings.Split(rel, string(os.PathSeparator)), func(s string) bool { return strings.EqualFold(s, ".goshs") }) {
 			logger.Warnf("blocked attempt to upload path containing .goshs: %q", rawName)
 			continue
 		}
@@ -312,7 +312,7 @@ func (fs *FileServer) bulkDownload(w http.ResponseWriter, req *http.Request) {
 			if ok := fs.applyCustomAuth(w, req, acl); !ok {
 				return
 			}
-			if slices.Contains(acl.Block, filepath.Base(absPath)) {
+			if blockListed(acl.Block, filepath.Base(absPath)) {
 				fs.handleError(w, req, fmt.Errorf("requested file is blocked"), http.StatusNotFound)
 				return
 			}
@@ -344,7 +344,7 @@ func (fs *FileServer) bulkDownload(w http.ResponseWriter, req *http.Request) {
 		}
 
 		// Never include the ACL config file itself — it contains credential hashes.
-		if filepath.Base(walkPath) == ".goshs" {
+		if strings.EqualFold(filepath.Base(walkPath), ".goshs") {
 			return nil
 		}
 		// Skip the chat's on-disk sink (uploads + persisted log); it is hidden
@@ -363,7 +363,7 @@ func (fs *FileServer) bulkDownload(w http.ResponseWriter, req *http.Request) {
 			if !aclSatisfied(req, acl) {
 				return nil
 			}
-			if slices.Contains(acl.Block, filepath.Base(walkPath)) {
+			if blockListed(acl.Block, filepath.Base(walkPath)) {
 				return nil
 			}
 		}

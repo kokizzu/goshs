@@ -7,7 +7,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"slices"
+	"strings"
 
 	"golang.org/x/net/webdav"
 )
@@ -156,7 +156,7 @@ func (fs *FileServer) webdavEnforceACL(w http.ResponseWriter, r *http.Request) b
 		return false
 	}
 	// Never expose the ACL config file itself — it holds the bcrypt hashes.
-	if filepath.Base(abs) == ".goshs" {
+	if strings.EqualFold(filepath.Base(abs), ".goshs") {
 		http.NotFound(w, r)
 		return false
 	}
@@ -169,7 +169,7 @@ func (fs *FileServer) webdavEnforceACL(w http.ResponseWriter, r *http.Request) b
 	if !fs.applyCustomAuth(w, r, acl) {
 		return false
 	}
-	if slices.Contains(acl.Block, filepath.Base(abs)) {
+	if blockListed(acl.Block, filepath.Base(abs)) {
 		http.NotFound(w, r)
 		return false
 	}
@@ -191,7 +191,7 @@ type webdavACLFileSystem struct {
 //
 // It returns nil when access to name is permitted.
 func (a webdavACLFileSystem) aclError(ctx context.Context, name string) error {
-	if path.Base(name) == ".goshs" {
+	if strings.EqualFold(path.Base(name), ".goshs") {
 		return os.ErrNotExist
 	}
 	abs, err := sanitizePath(a.srv.Webroot, name)
@@ -206,7 +206,7 @@ func (a webdavACLFileSystem) aclError(ctx context.Context, name string) error {
 	if acl.Auth != "" && !aclSatisfied(reqFromContext(ctx), acl) {
 		return os.ErrPermission
 	}
-	if slices.Contains(acl.Block, path.Base(name)) {
+	if blockListed(acl.Block, path.Base(name)) {
 		return os.ErrNotExist
 	}
 	return nil
@@ -276,10 +276,10 @@ func (f aclFile) Readdir(count int) ([]os.FileInfo, error) {
 	filtered := infos[:0]
 	for _, fi := range infos {
 		name := fi.Name()
-		if name == ".goshs" {
+		if strings.EqualFold(name, ".goshs") {
 			continue
 		}
-		if slices.Contains(acl.Block, name) {
+		if blockListed(acl.Block, name) {
 			continue
 		}
 		// A subdirectory may add its own auth requirement; hide it if unmet.

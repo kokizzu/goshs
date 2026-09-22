@@ -10,6 +10,7 @@ import (
 
 	ftplib "github.com/fclairamb/ftpserverlib"
 	"github.com/spf13/afero"
+	"goshs.de/goshs/v2/ca"
 	"goshs.de/goshs/v2/httpserver"
 	"goshs.de/goshs/v2/logger"
 	"goshs.de/goshs/v2/options"
@@ -27,6 +28,10 @@ type FTPServer struct {
 	NoDelete   bool
 	Webhook    webhook.Webhook
 	Whitelist  *httpserver.Whitelist
+	SSL        bool
+	SelfSigned bool
+	MyCert     string
+	MyKey      string
 
 	srv *ftplib.FtpServer // bound by Bind, served by Start
 }
@@ -43,6 +48,10 @@ func NewFTPServer(opts *options.Options, wl *httpserver.Whitelist, wh webhook.We
 		NoDelete:   opts.NoDelete,
 		Webhook:    wh,
 		Whitelist:  wl,
+		SSL:        opts.SSL,
+		SelfSigned: opts.SelfSigned,
+		MyCert:     opts.MyCert,
+		MyKey:      opts.MyKey,
 	}
 }
 
@@ -138,8 +147,33 @@ func (d *mainDriver) AuthUser(cc ftplib.ClientContext, user, pass string) (ftpli
 	return fs, nil
 }
 
+// GetTLSConfig returns a TLS config for FTPS (explicit TLS / AUTH TLS) when
+// goshs is started with -s. Returning an error (when TLS is not configured)
+// causes ftpserverlib to respond with StatusActionNotTaken instead of 234,
+// preventing the nil-pointer dereference that would occur if we returned
+// (nil, nil) and the library called tls.Server(conn, nil).
 func (d *mainDriver) GetTLSConfig() (*tls.Config, error) {
-	return nil, nil
+	if !d.srv.SSL {
+		return nil, fmt.Errorf("TLS not configured")
+	}
+	if d.srv.SelfSigned {
+		cfg, _, _, err := ca.Setup()
+		if err != nil {
+			return nil, fmt.Errorf("generating self-signed cert for FTP TLS: %w", err)
+		}
+		return cfg, nil
+	}
+	if d.srv.MyCert == "" || d.srv.MyKey == "" {
+		return nil, fmt.Errorf("TLS cert or key not provided")
+	}
+	cert, err := tls.LoadX509KeyPair(d.srv.MyCert, d.srv.MyKey)
+	if err != nil {
+		return nil, fmt.Errorf("loading FTP TLS cert/key: %w", err)
+	}
+	return &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		MinVersion:   tls.VersionTLS12,
+	}, nil
 }
 
 // noDeleteFs wraps afero.Fs and blocks any operation that would destroy an

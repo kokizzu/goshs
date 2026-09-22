@@ -13,7 +13,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -148,7 +147,7 @@ func (fs *FileServer) doDir(file *os.File, w http.ResponseWriter, req *http.Requ
 	// Get foldername
 	_, foldername := filepath.Split(file.Name())
 
-	if slices.Contains(parentConfig.Block, fmt.Sprintf("%s/", foldername)) {
+	if blockListed(parentConfig.Block, fmt.Sprintf("%s/", foldername)) {
 		fs.handleError(w, req, fmt.Errorf("open %s: no such file or directory", file.Name()), 404)
 		return
 	}
@@ -657,7 +656,7 @@ func (fileS *FileServer) constructItems(fis []fs.FileInfo, relpath string, acl c
 	items := make([]item, 0, len(fis))
 	// Iterate over FileInfo of dir
 	for _, fi := range fis {
-		if fi.Name() == ".goshs" {
+		if strings.EqualFold(fi.Name(), ".goshs") {
 			logger.Debug(".goshs detected and therefore applying")
 			// Do not add it to items
 			continue
@@ -815,13 +814,13 @@ func (fs *FileServer) sendFile(w http.ResponseWriter, req *http.Request, file *o
 
 	// Never serve .goshs file and return same error message if it was not there
 	// This way it is also not possible to enumerate
-	if filename == ".goshs" {
+	if strings.EqualFold(filename, ".goshs") {
 		fs.handleError(w, req, fmt.Errorf("open %s: no such file or directory", file.Name()), 404)
 		return
 	}
 
 	// Check if file is in block list and discard
-	if slices.Contains(acl.Block, filename) {
+	if blockListed(acl.Block, filename) {
 		fs.handleError(w, req, fmt.Errorf("open %s: no such file or directory", file.Name()), 404)
 		return
 	}
@@ -893,7 +892,7 @@ func (fs *FileServer) deleteFile(w http.ResponseWriter, req *http.Request) {
 	}
 
 	// Block deletion of the .goshs ACL file itself
-	if filepath.Base(deletePath) == ".goshs" {
+	if strings.EqualFold(filepath.Base(deletePath), ".goshs") {
 		fs.handleError(w, req, fmt.Errorf("cannot delete ACL file"), http.StatusForbidden)
 		return
 	}
@@ -911,7 +910,7 @@ func (fs *FileServer) deleteFile(w http.ResponseWriter, req *http.Request) {
 	// Enforce the .goshs block list: a block-listed file is treated as
 	// non-existent everywhere else (read, share, bulk, WebDAV), so deleting it
 	// must be refused too. Mirrors the read path's 404 response.
-	if slices.Contains(acl.Block, filepath.Base(deletePath)) {
+	if blockListed(acl.Block, filepath.Base(deletePath)) {
 		fs.handleError(w, req, fmt.Errorf("open %s: no such file or directory", deletePath), http.StatusNotFound)
 		return
 	}
@@ -1051,7 +1050,7 @@ func (fs *FileServer) CreateShareHandler(w http.ResponseWriter, r *http.Request)
 		if ok := fs.applyCustomAuth(w, r, acl); !ok {
 			return
 		}
-		if slices.Contains(acl.Block, filepath.Base(fpath)) {
+		if blockListed(acl.Block, filepath.Base(fpath)) {
 			fs.handleError(w, r, fmt.Errorf("requested file is blocked"), http.StatusNotFound)
 			return
 		}
