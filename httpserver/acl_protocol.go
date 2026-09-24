@@ -8,9 +8,9 @@ import (
 )
 
 // ProtocolACL enforces the per-directory .goshs ACL for file-transfer protocols
-// other than HTTP/WebDAV — currently SFTP — which serve the same webroot but
-// carry no per-request HTTP credential and therefore cannot satisfy a folder's
-// basic-auth requirement.
+// other than HTTP/WebDAV — SFTP, FTP, TFTP and SMB — which serve the same
+// webroot but carry no per-request HTTP credential and therefore cannot satisfy
+// a folder's basic-auth requirement.
 //
 // It fails closed, mirroring webdavEnforceACL / aclFile.Readdir: the .goshs file
 // itself is never accessible; a path governed by a .goshs Auth requirement is
@@ -18,7 +18,8 @@ import (
 // these protocols, so an unsatisfiable requirement means deny); and any path
 // whose basename is on the effective block list is denied. This closes
 // GHSA-2m7f-jq4x-rcj7, where the SFTP request handlers performed only a
-// webroot-boundary check and never consulted the .goshs ACL at all.
+// webroot-boundary check and never consulted the .goshs ACL at all, and
+// GHSA-q8gg-q2wc-w52g, the same gap in TFTP, FTP and SMB.
 type ProtocolACL struct {
 	fs *FileServer
 }
@@ -46,8 +47,13 @@ func NewProtocolACL(webroot string) *ProtocolACL {
 // its parent directory's effective ACL, while an existing directory is governed
 // by its own.
 func (p *ProtocolACL) Allowed(absPath string) bool {
-	// Never expose the ACL config file itself — it holds the bcrypt hashes.
+	// Never expose the ACL config file itself — it holds the bcrypt hashes —
+	// and never touch a path beneath a .goshs-named directory, which could only
+	// exist to mask an ACL file (GHSA-mhxc-hfx2-7w79).
 	if strings.EqualFold(filepath.Base(absPath), ".goshs") {
+		return false
+	}
+	if rel, err := filepath.Rel(p.fs.Webroot, absPath); err == nil && containsACLName(rel) {
 		return false
 	}
 	governing := absPath
@@ -75,20 +81,39 @@ func (p *ProtocolACL) FilterListing(dir string, infos []os.FileInfo) []os.FileIn
 	acl, _ := p.fs.findEffectiveACL(dir)
 	filtered := infos[:0]
 	for _, fi := range infos {
-		name := fi.Name()
-		if strings.EqualFold(name, ".goshs") {
-			continue
+		if p.visible(dir, acl, fi.Name(), fi.IsDir()) {
+			filtered = append(filtered, fi)
 		}
-		if blockListed(acl.Block, name) {
-			continue
-		}
-		if fi.IsDir() {
-			childACL, _ := p.fs.findEffectiveACL(filepath.Join(dir, name))
-			if childACL.Auth != "" {
-				continue
-			}
-		}
-		filtered = append(filtered, fi)
 	}
 	return filtered
+}
+
+// FilterDirEntries is FilterListing for os.ReadDir results.
+func (p *ProtocolACL) FilterDirEntries(dir string, entries []os.DirEntry) []os.DirEntry {
+	acl, _ := p.fs.findEffectiveACL(dir)
+	filtered := entries[:0]
+	for _, de := range entries {
+		if p.visible(dir, acl, de.Name(), de.IsDir()) {
+			filtered = append(filtered, de)
+		}
+	}
+	return filtered
+}
+
+// visible reports whether entry name of dir (whose effective ACL is acl) may be
+// shown to a credential-less protocol client.
+func (p *ProtocolACL) visible(dir string, acl configFile, name string, isDir bool) bool {
+	if strings.EqualFold(name, ".goshs") {
+		return false
+	}
+	if blockListed(acl.Block, name) {
+		return false
+	}
+	if isDir {
+		childACL, _ := p.fs.findEffectiveACL(filepath.Join(dir, name))
+		if childACL.Auth != "" {
+			return false
+		}
+	}
+	return true
 }

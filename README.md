@@ -168,6 +168,9 @@ These are the awesome contributors that made `goshs` even more secure :heart:
   <td align="center"><a href="https://github.com/jimaf">jimaf</a></td>
   <td align="center"><a href="https://github.com/wooseokdotkim">wooseokdotkim</a></td>
   <td align="center"><a href="https://github.com/Guilhem7">Guilhem7</a></td>
+</tr>
+<tr>
+  <td align="center"><a href="https://github.com/Hama1cco">Hama1cco</a></td>
 </tr></table>
 
 # Community

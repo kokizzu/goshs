@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path"
+	"path/filepath"
 	"strconv"
+	"time"
 
 	ftplib "github.com/fclairamb/ftpserverlib"
 	"github.com/spf13/afero"
@@ -132,7 +135,7 @@ func (d *mainDriver) AuthUser(cc ftplib.ClientContext, user, pass string) (ftpli
 
 	base := afero.NewBasePathFs(afero.NewOsFs(), d.srv.Root)
 	if d.srv.ReadOnly {
-		return afero.NewReadOnlyFs(base), nil
+		return d.srv.withACL(afero.NewReadOnlyFs(base)), nil
 	}
 	// upload-only and no-delete are independent and may be combined, so stack the
 	// wrappers rather than picking one branch. no-delete goes on first so an
@@ -144,7 +147,14 @@ func (d *mainDriver) AuthUser(cc ftplib.ClientContext, user, pass string) (ftpli
 	if d.srv.UploadOnly {
 		fs = &uploadOnlyFs{Fs: fs}
 	}
-	return fs, nil
+	return d.srv.withACL(fs), nil
+}
+
+// withACL wraps fs so every operation honours the per-folder .goshs ACL. It is
+// the outermost layer so its ReadDir (ftpserverlib's file-list extension) is
+// the one used for LIST/NLST/MLSD.
+func (s *FTPServer) withACL(fs afero.Fs) afero.Fs {
+	return &aclFs{Fs: fs, root: s.Root, acl: httpserver.NewProtocolACL(s.Root)}
 }
 
 // GetTLSConfig returns a TLS config for FTPS (explicit TLS / AUTH TLS) when
@@ -241,6 +251,134 @@ func (fs *uploadOnlyFs) Open(name string) (afero.File, error) {
 		return nil, fmt.Errorf("download not allowed in upload-only mode")
 	}
 	return fs.Fs.Open(name)
+}
+
+// aclFs enforces the per-folder .goshs ACL on the FTP view of the webroot
+// (GHSA-q8gg-q2wc-w52g). FTP credentials are server-wide, so a folder's own
+// basic-auth can never be presented: like SFTP, a .goshs auth requirement is a
+// hard deny, block-listed names and the .goshs file itself are hidden, and
+// listings are filtered. Names arrive as FTP paths relative to root.
+type aclFs struct {
+	afero.Fs
+	root string
+	acl  *httpserver.ProtocolACL
+}
+
+var _ ftplib.ClientDriverExtensionFileList = (*aclFs)(nil)
+
+// errACLDenied looks like a missing file so the ACL cannot be used to
+// enumerate protected names.
+var errACLDenied = os.ErrNotExist
+
+func (fs *aclFs) abs(name string) string {
+	return filepath.Join(fs.root, filepath.FromSlash(path.Clean("/"+name)))
+}
+
+func (fs *aclFs) check(names ...string) error {
+	for _, name := range names {
+		if !fs.acl.Allowed(fs.abs(name)) {
+			return &os.PathError{Op: "acl", Path: name, Err: errACLDenied}
+		}
+	}
+	return nil
+}
+
+func (fs *aclFs) Create(name string) (afero.File, error) {
+	if err := fs.check(name); err != nil {
+		return nil, err
+	}
+	return fs.Fs.Create(name)
+}
+
+func (fs *aclFs) Mkdir(name string, perm os.FileMode) error {
+	if err := fs.check(name); err != nil {
+		return err
+	}
+	return fs.Fs.Mkdir(name, perm)
+}
+
+func (fs *aclFs) MkdirAll(name string, perm os.FileMode) error {
+	if err := fs.check(name); err != nil {
+		return err
+	}
+	return fs.Fs.MkdirAll(name, perm)
+}
+
+func (fs *aclFs) Open(name string) (afero.File, error) {
+	if err := fs.check(name); err != nil {
+		return nil, err
+	}
+	return fs.Fs.Open(name)
+}
+
+func (fs *aclFs) OpenFile(name string, flag int, perm os.FileMode) (afero.File, error) {
+	if err := fs.check(name); err != nil {
+		return nil, err
+	}
+	return fs.Fs.OpenFile(name, flag, perm)
+}
+
+func (fs *aclFs) Remove(name string) error {
+	if err := fs.check(name); err != nil {
+		return err
+	}
+	return fs.Fs.Remove(name)
+}
+
+func (fs *aclFs) RemoveAll(name string) error {
+	if err := fs.check(name); err != nil {
+		return err
+	}
+	return fs.Fs.RemoveAll(name)
+}
+
+func (fs *aclFs) Rename(oldname, newname string) error {
+	if err := fs.check(oldname, newname); err != nil {
+		return err
+	}
+	return fs.Fs.Rename(oldname, newname)
+}
+
+func (fs *aclFs) Stat(name string) (os.FileInfo, error) {
+	if err := fs.check(name); err != nil {
+		return nil, err
+	}
+	return fs.Fs.Stat(name)
+}
+
+func (fs *aclFs) Chmod(name string, mode os.FileMode) error {
+	if err := fs.check(name); err != nil {
+		return err
+	}
+	return fs.Fs.Chmod(name, mode)
+}
+
+func (fs *aclFs) Chown(name string, uid, gid int) error {
+	if err := fs.check(name); err != nil {
+		return err
+	}
+	return fs.Fs.Chown(name, uid, gid)
+}
+
+func (fs *aclFs) Chtimes(name string, atime, mtime time.Time) error {
+	if err := fs.check(name); err != nil {
+		return err
+	}
+	return fs.Fs.Chtimes(name, atime, mtime)
+}
+
+// ReadDir implements ftplib.ClientDriverExtensionFileList so directory
+// listings hide the .goshs file, block-listed entries and auth-protected
+// subdirectories.
+func (fs *aclFs) ReadDir(name string) ([]os.FileInfo, error) {
+	if err := fs.check(name); err != nil {
+		return nil, err
+	}
+	infos, err := afero.ReadDir(fs.Fs, name)
+	if err != nil {
+		return nil, err
+	}
+	return fs.acl.FilterListing(fs.abs(name), infos), nil
 }
 
 func isAllowedIP(addr net.Addr, wl *httpserver.Whitelist) bool {

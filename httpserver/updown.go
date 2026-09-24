@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"time"
 
@@ -181,7 +180,7 @@ func (fs *FileServer) upload(w http.ResponseWriter, req *http.Request) {
 			logger.Warnf("blocked upload with invalid path %q", rawName)
 			continue
 		}
-		if slices.ContainsFunc(strings.Split(rel, string(os.PathSeparator)), func(s string) bool { return strings.EqualFold(s, ".goshs") }) {
+		if containsACLName(rel) {
 			logger.Warnf("blocked attempt to upload path containing .goshs: %q", rawName)
 			continue
 		}
