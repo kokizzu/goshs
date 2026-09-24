@@ -2,11 +2,18 @@ package httpserver
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
+
+// denyAllAuth is the Auth value of a fail-closed ACL. It contains no ':' so it
+// never parses as user:hash, making it unsatisfiable for aclSatisfied /
+// applyCustomAuth and a hard deny for ProtocolACL.
+const denyAllAuth = "\x00deny"
 
 func (fs *FileServer) findSpecialFile(folder string) (configFile, error) {
 	var config configFile
@@ -17,6 +24,7 @@ func (fs *FileServer) findSpecialFile(folder string) (configFile, error) {
 	if err != nil {
 		return config, err
 	}
+	defer file.Close()
 
 	fis, err := file.Readdir(-1)
 	if err != nil {
@@ -27,12 +35,21 @@ func (fs *FileServer) findSpecialFile(folder string) (configFile, error) {
 		if strings.EqualFold(fi.Name(), ".goshs") {
 			openFile := filepath.Join(file.Name(), fi.Name())
 
+			// Only a regular file can be an ACL config. A directory named .goshs
+			// (e.g. created via mkdir) would make io.ReadAll fail with EISDIR;
+			// skip it so it can neither shadow a real .goshs nor poison the
+			// resolver (GHSA-mhxc-hfx2-7w79). Stat follows symlinks.
+			if st, statErr := os.Stat(openFile); statErr == nil && !st.Mode().IsRegular() {
+				continue
+			}
+
 			// disable G304 (CWE-22): Potential file inclusion via variable
 			// #nosec G304
 			configFileDisk, err := os.Open(openFile)
 			if err != nil {
 				return config, err
 			}
+			defer configFileDisk.Close()
 
 			configFileBytes, err := io.ReadAll(configFileDisk)
 			if err != nil {
@@ -66,6 +83,14 @@ func (fs *FileServer) findSpecialFile(folder string) (configFile, error) {
 //     block entries keep applying to descendant directories (fail-closed).
 //
 // The walk never leaks upward past the webroot.
+//
+// It fails CLOSED (GHSA-mhxc-hfx2-7w79): if any .goshs along the walk cannot be
+// read or parsed, the returned ACL carries denyAllAuth, an Auth value no
+// credential can satisfy, alongside the error. Callers historically logged the
+// error and carried on with the ACL, so returning an empty configFile silently
+// dropped every ancestor's auth and block list. Directories that do not exist
+// (yet) hold no .goshs and are skipped, so ancestors still govern e.g. the
+// target of a nested mkdir.
 func (fs *FileServer) findEffectiveACL(dir string) (configFile, error) {
 	webroot := filepath.Clean(fs.Webroot)
 	current := filepath.Clean(dir)
@@ -74,7 +99,13 @@ func (fs *FileServer) findEffectiveACL(dir string) (configFile, error) {
 	for {
 		config, err := fs.findSpecialFile(current)
 		if err != nil {
-			return configFile{}, err
+			// Only a directory that is itself missing is skipped; any other
+			// failure (unreadable dir, dangling or unreadable .goshs, bad JSON)
+			// denies.
+			if _, statErr := os.Lstat(current); !errors.Is(statErr, os.ErrNotExist) {
+				return configFile{Auth: denyAllAuth}, err
+			}
+			config = configFile{}
 		}
 		if effective.Auth == "" && config.Auth != "" {
 			effective.Auth = config.Auth
@@ -95,4 +126,13 @@ func (fs *FileServer) findEffectiveACL(dir string) (configFile, error) {
 	}
 
 	return effective, nil
+}
+
+// containsACLName reports whether any component of p is named .goshs
+// (case-insensitively). Creating such a path would either plant an ACL file or
+// a directory masking one, so every create path must refuse it.
+func containsACLName(p string) bool {
+	return slices.ContainsFunc(strings.Split(filepath.ToSlash(p), "/"), func(s string) bool {
+		return strings.EqualFold(s, ".goshs")
+	})
 }

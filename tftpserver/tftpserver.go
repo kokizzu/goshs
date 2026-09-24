@@ -10,8 +10,8 @@
 // line-ending translation is intentionally not performed. Reads (RRQ) let a
 // target pull files from the webroot; writes (WRQ) let a target push files
 // into the upload folder (or webroot). Path traversal is rejected and the IP
-// whitelist / ReadOnly / UploadOnly options are honoured, matching the other
-// goshs protocol servers.
+// whitelist / ReadOnly / UploadOnly options and the per-folder .goshs ACL are
+// honoured, matching the other goshs protocol servers.
 package tftpserver
 
 import (
@@ -71,6 +71,8 @@ type TFTPServer struct {
 	Webhook    webhook.Webhook
 	Whitelist  *httpserver.Whitelist
 
+	acl *httpserver.ProtocolACL // per-folder .goshs ACL enforcement (GHSA-q8gg-q2wc-w52g)
+
 	pc net.PacketConn // bound by Bind, served by Start
 }
 
@@ -91,7 +93,17 @@ func NewTFTPServer(opts *options.Options, wl *httpserver.Whitelist, wh webhook.W
 		NoDelete:   opts.NoDelete,
 		Webhook:    wh,
 		Whitelist:  wl,
+		acl:        httpserver.NewProtocolACL(opts.Webroot),
 	}
+}
+
+// protocolACL returns the .goshs ACL enforcer, lazily building one for servers
+// constructed as struct literals (as the tests do).
+func (s *TFTPServer) protocolACL() *httpserver.ProtocolACL {
+	if s.acl != nil {
+		return s.acl
+	}
+	return httpserver.NewProtocolACL(s.Root)
 }
 
 // Start binds the main UDP socket and dispatches each incoming request to its
@@ -204,6 +216,16 @@ func (s *TFTPServer) handleRead(conn *net.UDPConn, client *net.UDPAddr, filename
 		return
 	}
 
+	// TFTP carries no credentials, so a .goshs-protected, block-listed or
+	// .goshs path is denied outright. Answer "file not found" so the ACL
+	// cannot be used to enumerate protected names.
+	if !s.protocolACL().Allowed(path) {
+		_, _ = conn.WriteToUDP(buildError(errFileNotFound, "file not found"), client)
+		logger.Warnf("[TFTP] RRQ %q from %s denied by .goshs ACL", filename, client.IP)
+		s.HandleWebhookSend("GET", filename, client.IP.String(), true)
+		return
+	}
+
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -243,6 +265,13 @@ func (s *TFTPServer) handleWrite(conn *net.UDPConn, client *net.UDPAddr, filenam
 	if !ok {
 		_, _ = conn.WriteToUDP(buildError(errAccessViolation, "illegal path"), client)
 		logger.Warnf("[TFTP] rejected traversal in WRQ %q from %s", filename, client.IP)
+		return
+	}
+
+	if !s.protocolACL().Allowed(path) {
+		_, _ = conn.WriteToUDP(buildError(errAccessViolation, "access denied"), client)
+		logger.Warnf("[TFTP] WRQ %q from %s denied by .goshs ACL", filename, client.IP)
+		s.HandleWebhookSend("PUT", filename, client.IP.String(), true)
 		return
 	}
 

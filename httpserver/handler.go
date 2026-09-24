@@ -1234,6 +1234,14 @@ func (fs *FileServer) handleMkdir(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// Never create a directory named .goshs (at any depth): it would mask
+		// the ACL file of that folder. Mirrors the upload/PUT guards
+		// (GHSA-mhxc-hfx2-7w79).
+		if rel, relErr := filepath.Rel(fs.Webroot, finalPath); relErr != nil || containsACLName(rel) {
+			http.Error(w, "Invalid path", http.StatusForbidden)
+			return
+		}
+
 		// Enforce .goshs ACL (recursive: walks up to webroot)
 		parentDir := filepath.Dir(finalPath)
 		acl, aclErr := fs.findEffectiveACL(parentDir)

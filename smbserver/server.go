@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"goshs.de/goshs/v2/httpserver"
 	"goshs.de/goshs/v2/logger"
 	"goshs.de/goshs/v2/options"
 	"goshs.de/goshs/v2/webhook"
@@ -37,6 +38,8 @@ type SMBServer struct {
 	Wordlist   string // optional wordlist path for quick hash cracking
 	Hub        *ws.Hub
 	WebHook    *webhook.Webhook
+
+	acl *httpserver.ProtocolACL // per-folder .goshs ACL enforcement (GHSA-q8gg-q2wc-w52g)
 
 	ln net.Listener // bound by Bind, served by Start
 
@@ -80,7 +83,17 @@ func NewSMBServer(opts *options.Options, hub *ws.Hub, webHook *webhook.Webhook) 
 		Wordlist:   opts.SMBWordlist,
 		Hub:        hub,
 		WebHook:    webHook,
+		acl:        httpserver.NewProtocolACL(opts.Webroot),
 	}
+}
+
+// protocolACL returns the .goshs ACL enforcer, lazily building one for servers
+// constructed as struct literals (as the tests do).
+func (s *SMBServer) protocolACL() *httpserver.ProtocolACL {
+	if s.acl != nil {
+		return s.acl
+	}
+	return httpserver.NewProtocolACL(s.Root)
 }
 
 // Bind acquires the listening socket so a port conflict is reported to the
@@ -999,6 +1012,13 @@ func (s *SMBServer) handleCreate(cs *connState, h *smb2Hdr, buf []byte) []byte {
 	if err != nil {
 		return errResp(h, STATUS_OBJECT_PATH_NOT_FOUND)
 	}
+	// SMB sessions cannot present a folder's .goshs credential, so a protected,
+	// block-listed or .goshs path is denied outright. Every later READ, WRITE,
+	// QUERY_DIRECTORY and SET_INFO goes through a handle opened here.
+	if !s.protocolACL().Allowed(localPath) {
+		logger.Debugf("SMB: CREATE denied by .goshs ACL: %s", localPath)
+		return errResp(h, STATUS_OBJECT_NAME_NOT_FOUND)
+	}
 
 	isDir := (createOptions & FILE_DIRECTORY_FILE) != 0
 	if relPath == "" {
@@ -1677,7 +1697,9 @@ func (s *SMBServer) handleQueryDir(cs *connState, h *smb2Hdr, buf []byte) []byte
 		if err != nil {
 			return errResp(h, STATUS_OBJECT_NAME_NOT_FOUND)
 		}
-		handle.DirEntries = entries
+		// Hide the .goshs file, block-listed entries and auth-protected
+		// subdirectories.
+		handle.DirEntries = s.protocolACL().FilterDirEntries(handle.Path, entries)
 		handle.DirIndex = 0
 		// Reset SyntheticEntriesSent only for a brand-new handle, not on
 		// RESTART_SCANS / REOPEN. This way "." and ".." are sent exactly once
@@ -2255,7 +2277,7 @@ func (s *SMBServer) handleSetInfo(cs *connState, h *smb2Hdr, buf []byte) []byte 
 				return errResp(h, STATUS_BAD_NETWORK_NAME)
 			}
 			newPath, err := s.safePath(tree.RootPath, newName)
-			if err != nil {
+			if err != nil || !s.protocolACL().Allowed(newPath) {
 				return errResp(h, STATUS_ACCESS_DENIED)
 			}
 			oldPath := handle.Path

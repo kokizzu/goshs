@@ -288,9 +288,24 @@ matching update.
   `readFile`/`writeFile`/`listFile`/`cmdFile` (incl. the Rename *destination*) in
   `sftpserver/helper.go`. A prior gap where SFTP consulted only `sanitizePath` and
   never the ACL was **GHSA-2m7f-jq4x-rcj7** (full read/write bypass of protected
-  folders); regression-tested in `sftpserver/acl_test.go`. FTP has no per-folder-auth
-  concept beyond its mode flags. When adding a new read/transfer protocol, wire
-  `ProtocolACL` or you reopen this class.
+  folders); regression-tested in `sftpserver/acl_test.go`. The same gap in TFTP, FTP
+  and SMB was **GHSA-q8gg-q2wc-w52g** (incl. anonymous download of the `.goshs` bcrypt
+  hash); now TFTP checks `Allowed()` in `handleRead`/`handleWrite`, FTP wraps its afero
+  fs in the outermost `aclFs` (also implements ftpserverlib's `ReadDir` extension to
+  filter listings), and SMB checks in `handleCreate` (every handle is born there),
+  the rename destination in `handleSetInfo`, and filters `handleQueryDir` via
+  `FilterDirEntries`. `Allowed()` also rejects any `.goshs` path *component*. Tests:
+  `{tftpserver,ftpserver,smbserver}/acl_test.go`. When adding a new read/transfer
+  protocol, wire `ProtocolACL` or you reopen this class.
+- **`findEffectiveACL` fails closed.** A `.goshs` that cannot be read/parsed (incl. a
+  dangling symlink) yields `Auth: denyAllAuth` (unsatisfiable, no `:`) plus the error,
+  because callers log the error and use the ACL anyway. `findSpecialFile` skips
+  non-regular `.goshs` entries, and directories that do not exist are skipped so
+  ancestors still govern. Previously a *directory* named `.goshs` (creatable via
+  `?mkdir`) made the resolver return an empty ACL, dropping all inherited auth/block
+  for the subtree — **GHSA-mhxc-hfx2-7w79**. `handleMkdir` now refuses any `.goshs`
+  component (`containsACLName`, shared with the upload guard). Tests:
+  `httpserver/goshs_dir_acl_test.go`.
 - **Bulk download** zip walker enforces per-file ACL and excludes `.goshs` during the
   recursive walk (regression-tested in `httpserver/bulk_acl_test.go`) — a prior bug let
   parent-dir bulk selection bypass nested `.goshs` auth/block.
